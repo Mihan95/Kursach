@@ -6,5 +6,5 @@ int main()
 	double r1[4] = { 1, 1, 1, 1 }, r2[4] = { M_SQRT2, M_SQRT2, M_SQRT2, M_SQRT2 };
 
 
-	return 0;
+	return 1;
 }
