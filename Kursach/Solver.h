@@ -5,7 +5,7 @@
 class Polygon
 {
 public:
-	friend static void add_figure_point(const double alpha1, const double alpha2, const double poly_edge_angle, double &alpha, Polygon &pol);
+	friend static void add_figure_point(const double alpha1, const double alpha2, const double poly_edge_angle, double &alpha, std::vector<double> &vec);
 	Polygon();
 	Polygon(uint32_t NVerts, uint32_t NMesh);
 	~Polygon();
@@ -16,19 +16,15 @@ private:
 	std::vector<double> poly;
 	std::vector<double> on_mesh;
 	void create_from_regular_poly(uint16_t n_angle);
+	void project_to_mesh();
 };
 
 class Solver
 {
 public:
-	Solver() : mesh_size(1), step(2. * M_PI / mesh_size){ f.resize(mesh_size); }
-	Solver(uint32_t N) : mesh_size(N), step(2. * M_PI / mesh_size) { f.resize(mesh_size); }
-	~Solver() { f.clear(); };
+	Solver() { }
+	~Solver() { }
 
-	void fill_polygon(int n_angles);
 private:
-	uint32_t mesh_size;
-	double step;
-	std::vector<double> f;
-	std::vector<double> g;
+
 };

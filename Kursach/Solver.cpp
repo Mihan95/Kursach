@@ -26,10 +26,10 @@ Polygon::~Polygon()
 	on_mesh.clear();
 }
 
-static void add_figure_point(const double alpha1, const double alpha2, const double poly_edge_angle, double &alpha, Polygon &pol)
+static void add_figure_point(const double alpha1, const double alpha2, const double poly_edge_angle, double &alpha, std::vector<double> &vec)
 {
 	double r = sin(alpha1 - alpha2) / (sin(alpha - alpha1) - sin(alpha - alpha2));
-	pol.poly.push_back(r);
+	vec.push_back(r);
 	alpha += poly_edge_angle;
 }
 
@@ -50,7 +50,27 @@ void Polygon::create_from_regular_poly(uint16_t n_angle)
 			alpha1 = alpha2;
 			alpha2 += edge_angle;
 		}
-		add_figure_point(alpha1, alpha2, poly_edge_angle, alpha, *this);
+		add_figure_point(alpha1, alpha2, poly_edge_angle, alpha, poly);
+	}
+
+}
+
+void Polygon::project_to_mesh()
+{
+	double alpha1 = 0;
+	double alpha2 = poly[0];
+	double alpha = step;
+
+	on_mesh.push_back(1.);
+	uint16_t poly_edge = 1;
+	for (uint32_t i = 1; i < mesh_size; i++)
+	{
+		if (alpha > alpha2)
+		{
+			alpha1 = alpha2;
+			alpha2 = poly[poly_edge++];
+		}
+		add_figure_point(alpha1, alpha2, step, alpha, on_mesh);
 	}
 
 }
