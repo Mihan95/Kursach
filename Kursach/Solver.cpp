@@ -105,28 +105,63 @@ void Solver::solve()
 	for (auto task : tasks)
 	{
 		const uint32_t N = task.f.get_mesh_size();
-		std::shared_ptr<double>   f_in((double*)fftw_malloc(sizeof(double)*N), [](double *p) { fftw_free(p); });
-		std::shared_ptr<double>  f_out((double*)fftw_malloc(sizeof(double)*N), [](double *p) { fftw_free(p); });
 
-		std::shared_ptr<double>   g_in((double*)fftw_malloc(sizeof(double)*N), [](double *p) { fftw_free(p); });
-		std::shared_ptr<double>  g_out((double*)fftw_malloc(sizeof(double)*N), [](double *p) { fftw_free(p); });
+		double *f_in  = (double* )fftw_malloc(sizeof(double)*N);
+		double *f_out = (double* )fftw_malloc(sizeof(double)*N);
+		double *g_in  = (double* )fftw_malloc(sizeof(double)*N);
+		double *g_out = (double* )fftw_malloc(sizeof(double)*N);
 
 		fftw_plan f_my_plan, g_my_plan;
-		f_my_plan = fftw_plan_r2r_1d(N, f_in.get(), f_out.get(), FFTW_R2HC, FFTW_ESTIMATE);
-		g_my_plan = fftw_plan_r2r_1d(N, g_in.get(), g_out.get(), FFTW_R2HC, FFTW_ESTIMATE);
+		f_my_plan = fftw_plan_r2r_1d(N, f_in, f_out, FFTW_R2HC, FFTW_ESTIMATE);
+		g_my_plan = fftw_plan_r2r_1d(N, g_in, g_out, FFTW_R2HC, FFTW_ESTIMATE);
 
-		std::copy(task.f.get_poly_on_mesh().begin(), task.f.get_poly_on_mesh().end(),  f_in.get());
-		std::copy(task.f.get_poly_on_mesh().begin(), task.f.get_poly_on_mesh().end(), f_out.get());
+		std::copy(task.f.get_poly_on_mesh().begin(), task.f.get_poly_on_mesh().end(),  f_in);
+		std::copy(task.f.get_poly_on_mesh().begin(), task.f.get_poly_on_mesh().end(), f_out);
 
-		std::copy(task.g.get_poly_on_mesh().begin(), task.g.get_poly_on_mesh().end(), g_in.get());
-		std::copy(task.g.get_poly_on_mesh().begin(), task.g.get_poly_on_mesh().end(), g_out.get());
+		std::copy(task.g.get_poly_on_mesh().begin(), task.g.get_poly_on_mesh().end(), g_in);
+		std::copy(task.g.get_poly_on_mesh().begin(), task.g.get_poly_on_mesh().end(), g_out);
 		
 		fftw_execute(f_my_plan);
 		fftw_execute(g_my_plan);
 
+		f_my_plan = fftw_plan_r2r_1d(N, f_in, f_out, FFTW_HC2R, FFTW_ESTIMATE);
 
+		/*сгруппируем полученные коэффициенты*/
+		memset(f_in, 0, N * sizeof(double));
+		for (uint32_t i = 0; i < N; i++)
+		{
+			f_in[0] += f_out[i] * f_out[i];
+			f_in[0] += g_out[i] * g_out[i];
+		}
+		f_in[0] -= 2. * (f_out[0] * g_out[0]);
+		f_in[0] *= 8. * M_PI / N;
+
+		for (uint32_t i = 1; i < N/2; i++)
+		{
+			f_in[i] = f_out[i] * g_out[i] + f_out[N - i] * g_out[N - i];
+			f_in[i] *= -16. * M_PI / N;
+		}
+		f_in[N / 2] = f_out[N/2] * g_out[N/2];
+		f_in[N / 2] *= -16. * M_PI / N;
+
+		for (uint32_t i = 1; i < N / 2; i++)
+		{
+			f_in[N - i] = f_out[i] * g_out[N-i] - f_out[N - i] * g_out[i];
+			f_in[N - i] *= -16. * M_PI / N;
+		}
+
+		uint32_t rot_angle = std::min_element(f_out, f_out + N) - f_out;
+
+		/*найдем норму наложения с новым сдвигом*/
+
+
+		fftw_execute(f_my_plan);
 
 		fftw_destroy_plan(f_my_plan);
 		fftw_destroy_plan(g_my_plan);
+		fftw_free(f_in);
+		fftw_free(f_out);
+		fftw_free(g_in);
+		fftw_free(g_out);
 	}
 }
