@@ -11,15 +11,15 @@ public:
 	~Polygon();
 
 	const uint32_t get_mesh_size() { return mesh_size; };
-	std::vector<double> get_poly_on_mesh() { return poly; }
+	std::vector<double> get_poly_on_mesh() { return on_mesh; }
+	void create_from_regular_poly(uint16_t n_angle);
+	void project_to_mesh(uint32_t rot);
 private:
 	uint32_t n_vertices;
 	uint32_t mesh_size;
 	double step;
 	std::vector<double> poly;
 	std::vector<double> on_mesh;
-	void create_from_regular_poly(uint16_t n_angle);
-	void project_to_mesh(uint32_t rot);
 };
 
 struct func
