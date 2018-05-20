@@ -11,7 +11,7 @@ int main(int argc, char* argv[])
 
 	Polygon g(4, 16);
 	g.create_from_regular_poly(4);
-	g.project_to_mesh(0);
+	g.project_to_mesh(2);
 
 	func task;
 	task.f = f;

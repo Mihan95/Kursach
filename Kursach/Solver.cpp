@@ -111,7 +111,6 @@ void Solver::solve()
 		double *g_in  = (double* )fftw_malloc(sizeof(double)*N);
 		double *g_out = (double* )fftw_malloc(sizeof(double)*N);
 		double *temp  = (double*)fftw_malloc(sizeof(double)*N);
-		fftw_complex *complex_input = (fftw_complex*)fftw_malloc(sizeof(fftw_complex)*(N/2+1));
 
 		fftw_plan f_my_plan, g_my_plan, my_plan;
 		f_my_plan = fftw_plan_r2r_1d(N, f_in, f_out, FFTW_R2HC, FFTW_ESTIMATE);
@@ -175,16 +174,17 @@ void Solver::solve()
 			f_in[N - i] *= 4. * M_PI / N;
 			f_in[N - i] /= (N*0.5);
 		}
-		for (int i = 0; i <= N / 2; i++)
+		/*for (int i = 0; i <= N / 2; i++)
 		{
 			f_in[i] /= 2.;
 		}
 		for (int i = N / 2 + 1; i < N; i++)
 		{
 			f_in[i] /= -2.;
-		}
-		memset(f_out, 0, N * sizeof(double));
-		/*for (int i = 0; i < N; i++)
+		}*/
+
+		memset(f_out, 0, N * sizeof(double));		
+		for (int i = 0; i < N; i++)
 		{
 			for (int k = 0; k <= N / 2; k++)
 			{
@@ -194,9 +194,9 @@ void Solver::solve()
 			{
 				f_out[i] += (f_in[k] * sin(2.*M_PI * k * i/N));
 			}
-		}*/
+		}
 
-		fftw_execute(my_plan);
+		//fftw_execute(my_plan);
 
 		double *min_ptr =  std::min_element(f_out, f_out + N);
 		uint64_t rot_angle = min_ptr - f_out;
