@@ -26,6 +26,7 @@ struct func
 {
 	Polygon f;
 	Polygon g;
+	std::vector<double> w;
 };
 
 class Solver
@@ -34,7 +35,8 @@ public:
 	Solver(func &poly_pare);
 	~Solver();
 	void add_task(func &poly_pare);
-	void solve();
+	void solve1();
+	void solve2();
 private:
 	std::vector<func> tasks;
 };

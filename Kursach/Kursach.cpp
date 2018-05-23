@@ -5,20 +5,24 @@
 
 int main(int argc, char* argv[])
 {
-	Polygon f(4, 16);
+	const uint32_t N = 16;
+
+	Polygon f(4, N);
 	f.create_from_regular_poly(4);
 	f.project_to_mesh(0);
 
-	Polygon g(4, 16);
+	Polygon g(4, N);
 	g.create_from_regular_poly(4);
-	g.project_to_mesh(2);
+	g.project_to_mesh(0);
 
 	func task;
 	task.f = f;
 	task.g = g;
+	task.w.resize(N);
+	std::fill(task.w.begin(), task.w.end(), 1.);
 
 	Solver slv(task);
-	slv.solve();
+	slv.solve1();
 
 	system("pause");
 }

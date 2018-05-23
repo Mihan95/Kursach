@@ -3,6 +3,8 @@
 #include <array>
 #include <memory>
 
+//#define USE_FFTW
+
 Polygon::Polygon()
 {
 	n_vertices = mesh_size = 1;
@@ -100,7 +102,7 @@ void Solver::add_task(func &poly_pare)
 	tasks.push_back(poly_pare);
 }
 
-void Solver::solve()
+void Solver::solve1()
 {
 	for (auto task : tasks)
 	{
@@ -211,5 +213,151 @@ void Solver::solve()
 		fftw_free(f_out);
 		fftw_free(g_in);
 		fftw_free(g_out);
+	}
+}
+
+static void group_coeffs(int N, double *h_out, double *g_out, double *h_in)
+{
+	for (int i = 0; i <= N / 2; i++)
+	{
+		h_out[i] *= 2.;
+		g_out[i] *= 2.;
+	}
+	for (int i = N / 2 + 1; i < N; i++)
+	{
+		h_out[i] *= -2.;
+		g_out[i] *= -2.;
+	}
+
+	h_in[0] = h_out[0] * g_out[0];
+	for (uint32_t i = 1; i < N / 2; i++)
+	{
+		h_in[i] = h_out[i] * g_out[i] + h_out[N - i] * g_out[N - i];
+	}
+	h_in[N / 2] = h_out[N / 2] * g_out[N / 2];
+
+	for (uint32_t i = 1; i < N / 2; i++)
+	{
+		h_in[N - i] = h_out[N - i] * g_out[i] - h_out[i] * g_out[N - i];
+	}
+}
+
+static void free(fftw_plan &plan1, fftw_plan &plan2, fftw_plan &plan3, double *buff1, double *buff2, double *buff3, double *buff4)
+{
+	fftw_destroy_plan(plan1);
+	fftw_destroy_plan(plan2);
+	fftw_destroy_plan(plan3);
+	fftw_free(buff1);
+	fftw_free(buff2);
+	fftw_free(buff3);
+	fftw_free(buff4);
+}
+
+void Solver::solve2()
+{
+	for (auto task : tasks)
+	{
+		const uint32_t N = task.f.get_mesh_size();
+
+		double *h_in = (double*)fftw_malloc(sizeof(double)*N);
+		double *h_out = (double*)fftw_malloc(sizeof(double)*N);
+		double *g_in = (double*)fftw_malloc(sizeof(double)*N);
+		double *g_out = (double*)fftw_malloc(sizeof(double)*N);
+		double *w_out = (double*)fftw_malloc(sizeof(double)*N);
+
+		double *temp = (double*)fftw_malloc(sizeof(double)*N);
+
+		fftw_plan my_plan_j, my_plan_s, my_plan;
+		my_plan_j = fftw_plan_r2r_1d(N, h_in, h_out, FFTW_R2HC, FFTW_ESTIMATE);
+		my_plan_s = fftw_plan_r2r_1d(N, g_in, g_out, FFTW_R2HC, FFTW_ESTIMATE);
+
+		for (int i = 0; i < N; i++)
+		{
+			h_in[i] = task.f.get_poly_on_mesh()[i] * task.w[i];
+			g_in[i] = task.g.get_poly_on_mesh()[i];
+		}
+
+		fftw_execute(my_plan_j);
+		fftw_execute(my_plan_s);
+		
+		memset(h_in, 0, N * sizeof(double));
+		group_coeffs(N, h_out, g_out, h_in);
+		/*for (int i = 0; i <= N / 2; i++)
+		{
+			h_in[i] /= 2.;
+		}
+		for (int i = N / 2 + 1; i < N; i++)
+		{
+			h_in[i] /= -2.;
+		}*/
+
+		double *e_in = g_in;
+		double *e_out = g_out;
+		double *w_in = h_out;
+
+		my_plan_j = fftw_plan_r2r_1d(N, w_in, w_out, FFTW_R2HC, FFTW_ESTIMATE);
+		my_plan_s = fftw_plan_r2r_1d(N, e_in, e_out, FFTW_R2HC, FFTW_ESTIMATE);
+
+		for (int i = 0; i < N; i++)
+		{
+			w_in[i] = task.w[i];
+			e_in[i] = task.g.get_poly_on_mesh()[i] * task.g.get_poly_on_mesh()[i];
+		}
+
+		fftw_execute(my_plan_j);
+		fftw_execute(my_plan_s);
+
+		std::copy(w_out, w_out + N, temp);
+		my_plan = fftw_plan_r2r_1d(N, w_in, w_out, FFTW_HC2R, FFTW_ESTIMATE);
+		memset(w_in, 0, N * sizeof(double));
+
+		/*сгруппируем полученные коэффициенты*/
+		group_coeffs(N, temp, e_out, w_in);
+		for (int i = 0; i < N; i++)
+		{
+			w_in[i] -= 2.* h_in[i];
+		}
+
+#ifdef USE_FFTW
+		for (int i = 0; i <= N / 2; i++)
+		{
+			w_in[i] /= 2.;
+		}
+		for (int i = N / 2 + 1; i < N; i++)
+		{
+			w_in[i] /= -2.;
+		}
+		fftw_execute(my_plan);
+#else
+		memset(w_out, 0, N * sizeof(double));
+		for (int i = 0; i < N; i++)
+		{
+			for (int k = 0; k <= N / 2; k++)
+			{
+				w_out[i] += (w_in[k] * cos(2.*M_PI * k * i / N));
+			}
+			for (int k = N - 1; k >= N / 2 + 1; k--)
+			{
+				w_out[i] += (w_in[k] * sin(2.*M_PI * k * i / N));
+			}
+			w_out[i] *= 2. / (N*N*N);
+		}
+
+#endif
+
+		double *min_ptr = std::min_element(w_out, w_out + N);
+		uint64_t rot_angle = min_ptr - w_out;
+		std::rotate(w_out, w_out + rot_angle, w_out + N);
+		double sum = 0.;
+		for (int i = 0; i < N; i++)
+		{
+			sum += task.f.get_poly_on_mesh()[i] * task.f.get_poly_on_mesh()[i] * task.w[i] + w_out[i];
+		}
+		std::cout << "Angle = " << rot_angle << std::endl;
+		std::cout << "Difference = " << *min_ptr << std::endl;
+		std::cout << "Norm = " << sum << std::endl;
+
+		free(my_plan, my_plan_s, my_plan_j, h_in, g_in, h_out, g_out);
+
 	}
 }
