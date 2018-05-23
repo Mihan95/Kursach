@@ -3,7 +3,7 @@
 #include <array>
 #include <memory>
 
-//#define USE_FFTW
+#define USE_FFTW
 
 Polygon::Polygon()
 {
@@ -265,8 +265,6 @@ void Solver::solve2()
 		double *g_out = (double*)fftw_malloc(sizeof(double)*N);
 		double *w_out = (double*)fftw_malloc(sizeof(double)*N);
 
-		double *temp = (double*)fftw_malloc(sizeof(double)*N);
-
 		fftw_plan my_plan_j, my_plan_s, my_plan;
 		my_plan_j = fftw_plan_r2r_1d(N, h_in, h_out, FFTW_R2HC, FFTW_ESTIMATE);
 		my_plan_s = fftw_plan_r2r_1d(N, g_in, g_out, FFTW_R2HC, FFTW_ESTIMATE);
@@ -280,20 +278,11 @@ void Solver::solve2()
 		fftw_execute(my_plan_j);
 		fftw_execute(my_plan_s);
 		
-		memset(h_in, 0, N * sizeof(double));
 		group_coeffs(N, h_out, g_out, h_in);
-		/*for (int i = 0; i <= N / 2; i++)
-		{
-			h_in[i] /= 2.;
-		}
-		for (int i = N / 2 + 1; i < N; i++)
-		{
-			h_in[i] /= -2.;
-		}*/
 
-		double *e_in = g_in;
+		double *e_in  = g_in; 
 		double *e_out = g_out;
-		double *w_in = h_out;
+		double *w_in  = h_out;
 
 		my_plan_j = fftw_plan_r2r_1d(N, w_in, w_out, FFTW_R2HC, FFTW_ESTIMATE);
 		my_plan_s = fftw_plan_r2r_1d(N, e_in, e_out, FFTW_R2HC, FFTW_ESTIMATE);
@@ -307,26 +296,21 @@ void Solver::solve2()
 		fftw_execute(my_plan_j);
 		fftw_execute(my_plan_s);
 
-		std::copy(w_out, w_out + N, temp);
-		my_plan = fftw_plan_r2r_1d(N, w_in, w_out, FFTW_HC2R, FFTW_ESTIMATE);
-		memset(w_in, 0, N * sizeof(double));
+		//std::copy(w_out, w_out + N, temp);
+		double *ew_in  = w_in;
+		double *ew_out = e_in;
+
+		my_plan = fftw_plan_r2r_1d(N, ew_in, ew_out, FFTW_HC2R, FFTW_ESTIMATE);
 
 		/*сгруппируем полученные коэффициенты*/
-		group_coeffs(N, temp, e_out, w_in);
+		group_coeffs(N, w_out, e_out, w_in);
 		for (int i = 0; i < N; i++)
 		{
 			w_in[i] -= 2.* h_in[i];
+			w_in[i] /= (N*N*0.5*N);
 		}
 
 #ifdef USE_FFTW
-		for (int i = 0; i <= N / 2; i++)
-		{
-			w_in[i] /= 2.;
-		}
-		for (int i = N / 2 + 1; i < N; i++)
-		{
-			w_in[i] /= -2.;
-		}
 		fftw_execute(my_plan);
 #else
 		memset(w_out, 0, N * sizeof(double));
@@ -340,22 +324,25 @@ void Solver::solve2()
 			{
 				w_out[i] += (w_in[k] * sin(2.*M_PI * k * i / N));
 			}
-			w_out[i] *= 2. / (N*N*N);
 		}
 
 #endif
 
-		double *min_ptr = std::min_element(w_out, w_out + N);
-		uint64_t rot_angle = min_ptr - w_out;
-		std::rotate(w_out, w_out + rot_angle, w_out + N);
-		double sum = 0.;
+		double *min_ptr = std::min_element(ew_out, ew_out + N);
+		uint64_t rot_angle = min_ptr - ew_out;
+		std::cout << "Angle = " << rot_angle << std::endl;
+
 		for (int i = 0; i < N; i++)
 		{
-			sum += task.f.get_poly_on_mesh()[i] * task.f.get_poly_on_mesh()[i] * task.w[i] + w_out[i];
+			g_in[i] = task.g.get_poly_on_mesh()[i];
 		}
-		std::cout << "Angle = " << rot_angle << std::endl;
-		std::cout << "Difference = " << *min_ptr << std::endl;
-		std::cout << "Norm = " << sum << std::endl;
+		std::rotate(g_in, g_in + rot_angle, g_in + N);
+		double norm = 0;
+		for (int i = 0; i < N; i++)
+		{
+			norm += ((task.f.get_poly_on_mesh()[i] - g_in[i]) * (task.f.get_poly_on_mesh()[i] - g_in[i]) * task.w[i]);
+		}
+		std::cout << "Difference = " << norm << std::endl;
 
 		free(my_plan, my_plan_s, my_plan_j, h_in, g_in, h_out, g_out);
 
