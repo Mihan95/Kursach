@@ -356,22 +356,33 @@ bool Solver::is_refinement()
 	{
 		const double g_angle = 2. * M_PI / task.g.get_mesh_size();
 		const double f_angle = 2. * M_PI / task.f.get_mesh_size();
+		const double sin_g_angle = sin(g_angle);
 		double alpha1 = g_angle;
 		double alpha  = f_angle;
 		double sum_f   = 0.;
 		double sum_g   = 0.;
 		double sum_g_1 = 0.;
 
+		std::vector<double> gi;
+		std::vector<double> gi_1;
+
 		for (auto f_i : task.f.get_poly_on_mesh())
 		{
 			if (alpha < alpha1)
-			{
-				double g_i   = sin(g_angle) / (sin((alpha - f_angle) - (alpha1 - g_angle)) + sin(alpha1 - (alpha - f_angle)));
-				double g_i_1 = sin(g_angle) / (sin(alpha - (alpha1 - g_angle)) + sin(alpha1 - alpha));
-				
-				double diff_g_i = g_i_1 - g_i;
-				sum_g   += g_i * diff_g_i;
-				sum_g_1 += g_i_1 * diff_g_i;
+			{  /* Для оптимизации НАЧАЛО */
+				const double angle_gi1_1 = alpha - (alpha1 - g_angle);
+				const double angle_gi1 = angle_gi1_1 - f_angle;
+
+				const double angle_gi1_2 = alpha1 - alpha;
+				const double angle_gi2 = angle_gi1_2 + f_angle;
+				/* КОНЕЦ для оптимизации */
+
+				gi.push_back( sin_g_angle / ( sin(angle_gi1) + sin(angle_gi2) ) );
+				gi_1.push_back( sin_g_angle / ( sin(angle_gi1_1) + sin(angle_gi1_2) ) );
+
+				double diff_g_i = gi_1.back() - gi.back();
+				sum_g   += gi.back() * diff_g_i;
+				sum_g_1 += gi_1.back() * diff_g_i;
 				sum_f   += f_i * diff_g_i;
 				alpha += f_angle;
 			}
@@ -381,21 +392,25 @@ bool Solver::is_refinement()
 				alpha  += f_angle;
 			}
 		}
-		double t = (sum_f - sum_g_1) / (sum_g - sum_g_1);
+		const double t = (sum_f - sum_g_1) / (sum_g - sum_g_1);
 
 		/*посчитаем нормы*/
 		alpha1 = g_angle;
 		alpha  = f_angle;
 		double norm_before = 0.;
 		double norm_after  = 0.;
-		for (auto f_i : task.f.get_poly_on_mesh())
+		for (int i = 0; i < task.f.get_mesh_size(); i++)
 		{
 			if (alpha < alpha1)
-			{
-				double g_i = sin(g_angle) / (sin((alpha - f_angle) - (alpha1 - g_angle)) + sin(alpha1 - (alpha - f_angle)));
-				double g_i_1 = sin(g_angle) / (sin(alpha - (alpha1 - g_angle)) + sin(alpha1 - alpha));
-				norm_before += (f_i - g_i) * (f_i - g_i);
-				norm_after  += (f_i - t * g_i - (1. - t) * g_i_1) * (f_i - t * g_i - (1. - t) * g_i_1);
+			{  
+				const auto fi = task.f.get_poly_on_mesh()[i];
+				/* Для оптимизации НАЧАЛО */
+				const double fi_gi = fi - gi[i];
+				const double fi_gi_t = fi - t * gi[i] - (1. - t) * gi_1[i];
+				/* КОНЕЦ для оптимизации */
+				
+				norm_before += fi_gi * fi_gi;
+				norm_after  += fi_gi_t * fi_gi_t;
 				alpha += f_angle;
 			}
 			else
@@ -411,6 +426,8 @@ bool Solver::is_refinement()
 		norm_after  /= task.f.get_mesh_size();
 		std::cout << "Norm before: " << norm_before << std::endl;
 		std::cout << "Norm after: "  << norm_after  << std::endl;
+		gi.clear();
+		gi_1.clear();
 	}
 	return true;
 

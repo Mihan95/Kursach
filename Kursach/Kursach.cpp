@@ -4,16 +4,16 @@
 #include "Solver.h"
 
 #define TEST_REF
-
+//TO DO: добавить умножение на константы и на N во все нормы
 int main(int argc, char* argv[])
 {
-	const uint32_t N = 4096;
+	const uint32_t N = 128;
 
 #ifdef TEST_REF
 
 	Polygon f(4, N);
 	f.create_from_regular_poly(4);
-	f.project_to_mesh(3);
+	f.project_to_mesh(31);
 
 	Polygon g(4, 4);
 	g.create_from_regular_poly(4);
