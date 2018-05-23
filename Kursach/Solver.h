@@ -37,6 +37,7 @@ public:
 	void add_task(func &poly_pare);
 	void solve1();
 	void solve2();
+	bool is_refinement();
 private:
 	std::vector<func> tasks;
 };

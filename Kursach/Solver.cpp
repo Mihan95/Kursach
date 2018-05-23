@@ -216,18 +216,17 @@ void Solver::solve1()
 	}
 }
 
-static void group_coeffs(int N, double *h_out, double *g_out, double *h_in)
+static void group_coeffs(uint32_t N, double *h_out, double *g_out, double *h_in)
 {
-	for (int i = 0; i <= N / 2; i++)
-	{
-		h_out[i] *= 2.;
-		g_out[i] *= 2.;
-	}
-	for (int i = N / 2 + 1; i < N; i++)
-	{
-		h_out[i] *= -2.;
-		g_out[i] *= -2.;
-	}
+	const double  mul =  2.;
+	const double _mul = -2.;
+	const int border = N / 2 + 1;
+
+	std::transform(h_out, h_out + border, h_out, std::bind2nd(std::multiplies<double>(), mul));
+	std::transform(g_out, g_out + border, g_out, std::bind2nd(std::multiplies<double>(), mul));
+
+	std::transform(h_out + border, h_out + N, h_out + border, std::bind2nd(std::multiplies<double>(), _mul));
+	std::transform(g_out + border, g_out + N, g_out + border, std::bind2nd(std::multiplies<double>(), _mul));
 
 	h_in[0] = h_out[0] * g_out[0];
 	for (uint32_t i = 1; i < N / 2; i++)
@@ -242,7 +241,7 @@ static void group_coeffs(int N, double *h_out, double *g_out, double *h_in)
 	}
 }
 
-static void free(fftw_plan &plan1, fftw_plan &plan2, fftw_plan &plan3, double *buff1, double *buff2, double *buff3, double *buff4)
+static void free(fftw_plan &plan1, fftw_plan &plan2, fftw_plan &plan3, double *buff1, double *buff2, double *buff3, double *buff4, double *buff5)
 {
 	fftw_destroy_plan(plan1);
 	fftw_destroy_plan(plan2);
@@ -251,6 +250,7 @@ static void free(fftw_plan &plan1, fftw_plan &plan2, fftw_plan &plan3, double *b
 	fftw_free(buff2);
 	fftw_free(buff3);
 	fftw_free(buff4);
+	fftw_free(buff5);
 }
 
 void Solver::solve2()
@@ -259,9 +259,9 @@ void Solver::solve2()
 	{
 		const uint32_t N = task.f.get_mesh_size();
 
-		double *h_in = (double*)fftw_malloc(sizeof(double)*N);
+		double *h_in  = (double*)fftw_malloc(sizeof(double)*N);
 		double *h_out = (double*)fftw_malloc(sizeof(double)*N);
-		double *g_in = (double*)fftw_malloc(sizeof(double)*N);
+		double *g_in  = (double*)fftw_malloc(sizeof(double)*N);
 		double *g_out = (double*)fftw_malloc(sizeof(double)*N);
 		double *w_out = (double*)fftw_malloc(sizeof(double)*N);
 
@@ -269,7 +269,7 @@ void Solver::solve2()
 		my_plan_j = fftw_plan_r2r_1d(N, h_in, h_out, FFTW_R2HC, FFTW_ESTIMATE);
 		my_plan_s = fftw_plan_r2r_1d(N, g_in, g_out, FFTW_R2HC, FFTW_ESTIMATE);
 
-		for (int i = 0; i < N; i++)
+		for (uint32_t i = 0; i < N; i++)
 		{
 			h_in[i] = task.f.get_poly_on_mesh()[i] * task.w[i];
 			g_in[i] = task.g.get_poly_on_mesh()[i];
@@ -280,9 +280,9 @@ void Solver::solve2()
 		
 		group_coeffs(N, h_out, g_out, h_in);
 
-		double *e_in  = g_in; 
-		double *e_out = g_out;
-		double *w_in  = h_out;
+		double *e_in  = g_in;   g_in = nullptr;
+		double *e_out = g_out; g_out = nullptr;
+		double *w_in  = h_out; h_out = nullptr;
 
 		my_plan_j = fftw_plan_r2r_1d(N, w_in, w_out, FFTW_R2HC, FFTW_ESTIMATE);
 		my_plan_s = fftw_plan_r2r_1d(N, e_in, e_out, FFTW_R2HC, FFTW_ESTIMATE);
@@ -296,19 +296,19 @@ void Solver::solve2()
 		fftw_execute(my_plan_j);
 		fftw_execute(my_plan_s);
 
-		//std::copy(w_out, w_out + N, temp);
-		double *ew_in  = w_in;
-		double *ew_out = e_in;
+		double *ew_in = w_in;  w_in = nullptr;
+		double *ew_out = e_in; e_in = nullptr;
 
 		my_plan = fftw_plan_r2r_1d(N, ew_in, ew_out, FFTW_HC2R, FFTW_ESTIMATE);
 
 		/*сгруппируем полученные коэффициенты*/
-		group_coeffs(N, w_out, e_out, w_in);
+		group_coeffs(N, w_out, e_out, ew_in);
+		const double N_1 = 1. / N;
 		for (int i = 0; i < N; i++)
 		{
-			w_in[i] -= 2.* h_in[i];
-			w_in[i] /= (N*N*0.5*N);
+			ew_in[i] -= 2.* h_in[i];
 		}
+		std::for_each(ew_in, ew_in + N, [&](double &n) { n *= (2. * N_1 * N_1 * N_1); });
 
 #ifdef USE_FFTW
 		fftw_execute(my_plan);
@@ -318,11 +318,11 @@ void Solver::solve2()
 		{
 			for (int k = 0; k <= N / 2; k++)
 			{
-				w_out[i] += (w_in[k] * cos(2.*M_PI * k * i / N));
+				w_out[i] += (ew_in[k] * cos(2.*M_PI * k * i / N));
 			}
 			for (int k = N - 1; k >= N / 2 + 1; k--)
 			{
-				w_out[i] += (w_in[k] * sin(2.*M_PI * k * i / N));
+				w_out[i] += (ew_in[k] * sin(2.*M_PI * k * i / N));
 			}
 		}
 
@@ -332,6 +332,7 @@ void Solver::solve2()
 		uint64_t rot_angle = min_ptr - ew_out;
 		std::cout << "Angle = " << rot_angle << std::endl;
 
+		g_in = ew_in;
 		for (int i = 0; i < N; i++)
 		{
 			g_in[i] = task.g.get_poly_on_mesh()[i];
@@ -344,7 +345,73 @@ void Solver::solve2()
 		}
 		std::cout << "Difference = " << norm << std::endl;
 
-		free(my_plan, my_plan_s, my_plan_j, h_in, g_in, h_out, g_out);
+		free(my_plan, my_plan_s, my_plan_j, ew_in, ew_out, e_out, h_in, w_out);
 
 	}
+}
+
+bool Solver::is_refinement()
+{
+	for (auto task : tasks)
+	{
+		const double g_angle = 2. * M_PI / task.g.get_mesh_size();
+		const double f_angle = 2. * M_PI / task.f.get_mesh_size();
+		double alpha1 = g_angle;
+		double alpha  = f_angle;
+		double sum_f   = 0.;
+		double sum_g   = 0.;
+		double sum_g_1 = 0.;
+
+		for (auto f_i : task.f.get_poly_on_mesh())
+		{
+			if (alpha < alpha1)
+			{
+				double g_i   = sin(g_angle) / (sin((alpha - f_angle) - (alpha1 - g_angle)) + sin(alpha1 - (alpha - f_angle)));
+				double g_i_1 = sin(g_angle) / (sin(alpha - (alpha1 - g_angle)) + sin(alpha1 - alpha));
+				
+				double diff_g_i = g_i_1 - g_i;
+				sum_g   += g_i * diff_g_i;
+				sum_g_1 += g_i_1 * diff_g_i;
+				sum_f   += f_i * diff_g_i;
+				alpha += f_angle;
+			}
+			else
+			{
+				alpha1 += g_angle;
+				alpha  += f_angle;
+			}
+		}
+		double t = (sum_f - sum_g_1) / (sum_g - sum_g_1);
+
+		/*посчитаем нормы*/
+		alpha1 = g_angle;
+		alpha  = f_angle;
+		double norm_before = 0.;
+		double norm_after  = 0.;
+		for (auto f_i : task.f.get_poly_on_mesh())
+		{
+			if (alpha < alpha1)
+			{
+				double g_i = sin(g_angle) / (sin((alpha - f_angle) - (alpha1 - g_angle)) + sin(alpha1 - (alpha - f_angle)));
+				double g_i_1 = sin(g_angle) / (sin(alpha - (alpha1 - g_angle)) + sin(alpha1 - alpha));
+				norm_before += (f_i - g_i) * (f_i - g_i);
+				norm_after  += (f_i - t * g_i - (1. - t) * g_i_1) * (f_i - t * g_i - (1. - t) * g_i_1);
+				alpha += f_angle;
+			}
+			else
+			{
+				alpha1 += g_angle;
+				alpha  += f_angle;
+			}
+		}
+
+		norm_before = sqrt(norm_before);
+		norm_after  = sqrt(norm_after);
+		norm_before /= task.f.get_mesh_size();
+		norm_after  /= task.f.get_mesh_size();
+		std::cout << "Norm before: " << norm_before << std::endl;
+		std::cout << "Norm after: "  << norm_after  << std::endl;
+	}
+	return true;
+
 }
