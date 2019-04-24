@@ -2,6 +2,7 @@
 #include "Solver.h"
 #include <array>
 #include <memory>
+#include "poly34.h"
 
 #define USE_FFTW
 
@@ -118,7 +119,7 @@ void Solver::solve1()
 		f_my_plan = fftw_plan_r2r_1d(N, f_in, f_out, FFTW_R2HC, FFTW_ESTIMATE);
 		g_my_plan = fftw_plan_r2r_1d(N, g_in, g_out, FFTW_R2HC, FFTW_ESTIMATE);
 
-		for (int i = 0; i < N; i++)
+		for (uint32_t i = 0; i < N; i++)
 		{
 			f_in[i] = task.f.get_poly_on_mesh()[i];
 			g_in[i] = task.g.get_poly_on_mesh()[i];
@@ -127,7 +128,7 @@ void Solver::solve1()
 		fftw_execute(f_my_plan);
 		fftw_execute(g_my_plan);
 
-		for (int i = 0; i < N; i++)
+		for (uint32_t i = 0; i < N; i++)
 		{
 			temp[i] = f_out[i];
 		}
@@ -135,17 +136,17 @@ void Solver::solve1()
 		my_plan = fftw_plan_r2r_1d(N, f_in, f_out, FFTW_HC2R, FFTW_ESTIMATE);
 		memset(f_in, 0, N * sizeof(double));
 
-		for (int i = 0; i < N; i++)
+		for (uint32_t i = 0; i < N; i++)
 		{
 			f_out[i] = temp[i];
 		}
 		/*сгруппируем полученные коэффициенты*/
-		for (int i = 0; i <= N / 2; i++)
+		for (uint32_t i = 0; i <= N / 2; i++)
 		{
 			f_out[i] *= 2.;
 			g_out[i] *= 2.;
 		}
-		for (int i = N / 2 + 1; i < N; i++)
+		for (uint32_t i = N / 2 + 1; i < N; i++)
 		{
 			f_out[i] *= -2.;
 			g_out[i] *= -2.;
@@ -186,13 +187,13 @@ void Solver::solve1()
 		}*/
 
 		memset(f_out, 0, N * sizeof(double));		
-		for (int i = 0; i < N; i++)
+		for (uint32_t i = 0; i < N; i++)
 		{
-			for (int k = 0; k <= N / 2; k++)
+			for (uint32_t k = 0; k <= N / 2; k++)
 			{
 				f_out[i] += (f_in[k] * cos(2.*M_PI * k * i/N));
 			}
-			for (int k = N-1; k >= N / 2+1; k--)
+			for (uint32_t k = N-1; k >= N / 2+1; k--)
 			{
 				f_out[i] += (f_in[k] * sin(2.*M_PI * k * i/N));
 			}
@@ -287,7 +288,7 @@ void Solver::solve2()
 		my_plan_j = fftw_plan_r2r_1d(N, w_in, w_out, FFTW_R2HC, FFTW_ESTIMATE);
 		my_plan_s = fftw_plan_r2r_1d(N, e_in, e_out, FFTW_R2HC, FFTW_ESTIMATE);
 
-		for (int i = 0; i < N; i++)
+		for (uint32_t i = 0; i < N; i++)
 		{
 			w_in[i] = task.w[i];
 			e_in[i] = task.g.get_poly_on_mesh()[i] * task.g.get_poly_on_mesh()[i];
@@ -304,7 +305,7 @@ void Solver::solve2()
 		/*сгруппируем полученные коэффициенты*/
 		group_coeffs(N, w_out, e_out, ew_in);
 		const double N_1 = 1. / N;
-		for (int i = 0; i < N; i++)
+		for (uint32_t i = 0; i < N; i++)
 		{
 			ew_in[i] -= 2.* h_in[i];
 		}
@@ -333,13 +334,13 @@ void Solver::solve2()
 		std::cout << "Angle = " << rot_angle << std::endl;
 
 		g_in = ew_in;
-		for (int i = 0; i < N; i++)
+		for (uint32_t i = 0; i < N; i++)
 		{
 			g_in[i] = task.g.get_poly_on_mesh()[i];
 		}
 		std::rotate(g_in, g_in + rot_angle, g_in + N);
 		double norm = 0;
-		for (int i = 0; i < N; i++)
+		for (uint32_t i = 0; i < N; i++)
 		{
 			norm += ((task.f.get_poly_on_mesh()[i] - g_in[i]) * (task.f.get_poly_on_mesh()[i] - g_in[i]) * task.w[i]);
 		}
@@ -399,7 +400,7 @@ bool Solver::is_refinement()
 		alpha  = f_angle;
 		double norm_before = 0.;
 		double norm_after  = 0.;
-		for (int i = 0; i < task.f.get_mesh_size(); i++)
+		for (uint32_t i = 0; i < task.f.get_mesh_size(); i++)
 		{
 			if (alpha < alpha1)
 			{  
@@ -431,4 +432,185 @@ bool Solver::is_refinement()
 	}
 	return true;
 
+}
+
+//s2;
+static double compute_angle_quad_functional(const std::vector<double> & g_coo, const std::vector<double> & f_coo, double t)
+{
+	const double M_2PI = 2. * M_PI;
+	const uint32_t N = f_coo.size();
+
+	double sum = 0.;
+	double tmp_sum;
+	for (uint32_t i = 0; i < N-1; i++)
+	{
+		tmp_sum = (t*t - 2.*t + 1) * g_coo[i] * g_coo[i] + t * t * g_coo[i + 1] * g_coo[i + 1]
+			- 2. * (t*t - t) * g_coo[i] * g_coo[i + 1] * cos(M_2PI / N) - f_coo[i];
+		sum = sum + (tmp_sum * tmp_sum);
+	}
+	{
+		tmp_sum = (t*t - 2.*t + 1) * g_coo[N - 1] * g_coo[N - 1] + t * t * g_coo[0] * g_coo[0]
+			- 2. * (t*t - t) * g_coo[N - 1] * g_coo[0] * cos(M_2PI / N) - f_coo[N - 1];
+		sum = sum + (tmp_sum * tmp_sum);
+	}
+
+	return sum;
+}
+
+struct EngVal
+{
+	double t;
+	double s2;
+	EngVal(double par, double s2_par) : t(par), s2(s2_par) {}
+	EngVal() : t(0.), s2(0.) {}
+};
+
+uint32_t Solver::edit_angle_quad(double &ret_rot_angle)
+{
+
+	const double M_2PI = 2. * M_PI;
+	//Construct equation coeffs
+	for (auto task : tasks)
+	{
+		const Polygon & f = task.f;
+		const Polygon & g = task.g;
+		const std::vector<double> & g_coo = g.get_poly_on_mesh();
+		const std::vector<double> & f_coo = f.get_poly_on_mesh();
+
+		const uint32_t N = task.f.get_mesh_size();
+		//TODO: calculate rot_angle first
+
+		/////////////////////////////////////////////
+		double border_value_0(0.), border_value_1(0.);
+		for (uint32_t i = 0; i < N; i++)
+		{
+			double tmp_sum = g_coo[i] * g_coo[i] - f_coo[i] * f_coo[i];
+			border_value_0 = border_value_0 + tmp_sum * tmp_sum;
+		}
+		for (uint32_t i = 0; i < N-1; i++)
+		{
+			double tmp_sum = g_coo[i+1] * g_coo[i+1] - f_coo[i] * f_coo[i];
+			border_value_1 = border_value_1 + tmp_sum * tmp_sum;
+		}
+		{
+			double tmp_sum = g_coo[0] * g_coo[0] - f_coo[N - 1] * f_coo[N - 1];
+			border_value_1 = border_value_1 + tmp_sum * tmp_sum;
+		}
+		//(t, s2(t))
+		EngVal border_min(0., 0.);
+		if (border_value_0 < border_value_1)
+		{			
+			border_min.t = 0.;
+			border_min.s2 = border_value_0;
+		}
+		else
+		{
+			border_min.t = 1.;
+			border_min.s2 = border_value_1;			
+		}
+
+		
+		//////////////////////////////////////////////
+
+		double *a = new double[N];
+		double a_coeff(0.), b_coeff(0.), c_coeff(0.), d_coeff(0.);
+		double tmp_sum_A(0.), tmp_sum_B(0.), tmp_sum_C(0.);
+		//a, b, c and A, B, C are absolutely independent 
+		double gg = 0.;
+		double ggcos = 0.;
+		for (uint32_t i = 0; i < N-1; i++)
+		{
+			gg = g_coo[i] * g_coo[i];
+			ggcos = g_coo[i] * g_coo[i + 1] * cos(M_2PI / N);
+
+			tmp_sum_A = gg + g_coo[i + 1] * g_coo[i + 1] - 2 * ggcos;
+
+			tmp_sum_B = ggcos - gg;
+
+			tmp_sum_C = gg - f_coo[i] * f_coo[i];
+
+			//Construct equation coeffs
+			a_coeff = a_coeff + (tmp_sum_A * tmp_sum_A);
+			b_coeff = b_coeff + (tmp_sum_A * tmp_sum_B);
+			c_coeff = c_coeff + (2. * tmp_sum_B + tmp_sum_C * tmp_sum_A);
+			d_coeff = d_coeff + (tmp_sum_B * tmp_sum_C);
+		}
+		{
+			gg = g_coo[N - 1] * g_coo[N - 1];
+			ggcos = g_coo[N - 1] * g_coo[0] * cos(M_2PI / N);
+
+			tmp_sum_A = gg + g_coo[0] * g_coo[0] - 2 * ggcos;
+
+			tmp_sum_B = ggcos - gg;
+
+			tmp_sum_C = gg - f_coo[N - 1] * f_coo[N - 1];
+
+			//Construct equation coeffs
+			a_coeff = a_coeff + (tmp_sum_A * tmp_sum_A);
+			b_coeff = b_coeff + (tmp_sum_A * tmp_sum_B);
+			c_coeff = c_coeff + (2. * tmp_sum_B + tmp_sum_C * tmp_sum_A);
+			d_coeff = d_coeff + (tmp_sum_B * tmp_sum_C);
+		}
+		b_coeff *= 3.;
+
+		if(fabs(a_coeff) < 1.e-15 && fabs(b_coeff) < 1.e-15 && fabs(c_coeff) < 1.e-15)
+		{
+			std::cout << "Solver::edit_angle_quad(): wrong a_coeff, b_coeff, c_coeff\n";
+			return -1;
+		}
+		
+		if (fabs(a_coeff) < 1.e-15)
+		{
+			if (fabs(b_coeff) < 1.e-15)
+			{
+				//This is linear equation
+				ret_rot_angle = -d_coeff / c_coeff;
+				double value_0 = compute_angle_quad_functional(g_coo, f_coo, ret_rot_angle);
+				ret_rot_angle = value_0 < border_min.s2 ? ret_rot_angle : border_min.t;
+				return 1;
+			}
+
+			//This is quadratic equation
+			c_coeff /= b_coeff;
+			d_coeff /= b_coeff;
+			double * x = new double[2];
+			int32_t ret_val = SolveP2(x, c_coeff, d_coeff);
+			if (ret_val == 0)
+				std::cout << "Solver::edit_angle_quad() : no real root in quadratic equation\n";
+
+			EngVal value_x_0(x[0], compute_angle_quad_functional(g_coo, f_coo, x[0]));
+			EngVal value_x_1(x[1], compute_angle_quad_functional(g_coo, f_coo, x[1]));
+
+			ret_rot_angle = std::min({ border_min, value_x_0, value_x_1 }, [](const EngVal & v1, const EngVal & v2) {
+				return v1.s2 < v2.s2;
+			}).t;
+			return 1;
+		}
+
+		//This is cubic equation
+		b_coeff /= a_coeff;
+		c_coeff /= a_coeff;
+		d_coeff /= a_coeff;
+		double * x = new double[3];
+		int32_t ret_val = SolveP3(x, b_coeff, c_coeff, d_coeff);
+		if (ret_val == 3)
+		{
+			EngVal value_x_0(x[0], compute_angle_quad_functional(g_coo, f_coo, x[0]));
+			EngVal value_x_1(x[1], compute_angle_quad_functional(g_coo, f_coo, x[1]));
+			EngVal value_x_2(x[2], compute_angle_quad_functional(g_coo, f_coo, x[2]));
+
+			ret_rot_angle = std::min({ border_min, value_x_0, value_x_1, value_x_2 }, [](const EngVal & v1, const EngVal & v2) {
+				return v1.s2 < v2.s2;
+			}).t;
+		}
+		else
+		{
+			EngVal value_x_0(x[0], compute_angle_quad_functional(g_coo, f_coo, x[0]));
+
+			ret_rot_angle = std::min({ border_min, value_x_0 }, [](const EngVal & v1, const EngVal & v2) {
+				return v1.s2 < v2.s2;
+			}).t;
+		}
+		return 1;
+	}
 }
