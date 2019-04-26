@@ -3,6 +3,8 @@
 #include <array>
 #include <memory>
 #include "poly34.h"
+#include "gsl_min.h"
+#include <gsl/gsl_errno.h>
 
 #define USE_FFTW
 
@@ -60,6 +62,29 @@ void Polygon::create_from_regular_poly(uint16_t n_angle)
 
 }
 
+static double shift_point(double r1, double r2, double cos_, double t)
+{
+	double t_1 = t - 1;
+	return sqrt(t_1*t_1 * r1*r1 + t * t*r2*r2 - 2.*t*t_1*r1*r2*cos_);
+}
+
+void Polygon::shift_poly_on_mesh(double t)
+{
+	const uint32_t N = on_mesh.size();
+	const double cos_ = cos(2. * M_PI / N);
+
+	std::vector<double> new_on_mesh(N);
+	{
+		new_on_mesh[0] = shift_point(on_mesh[0], on_mesh[N-1], cos_, t);
+	}
+	for (uint32_t i = 1; i < N; i++)
+	{
+		new_on_mesh[i] = shift_point(on_mesh[i], on_mesh[i - 1], cos_, t);
+	}
+
+	on_mesh = new_on_mesh;
+}
+
 void Polygon::project_to_mesh(uint32_t rot)
 {
 	const double poly_edge_angle = 2. * M_PI / n_vertices;
@@ -85,7 +110,6 @@ void Polygon::project_to_mesh(uint32_t rot)
 	}
 
 	std::rotate(on_mesh.rbegin(), on_mesh.rbegin() + rot, on_mesh.rend());
-
 }
 
 Solver::Solver(func &poly_pare)
@@ -445,12 +469,40 @@ static double compute_angle_quad_functional(const std::vector<double> & g_coo, c
 	for (uint32_t i = 0; i < N-1; i++)
 	{
 		tmp_sum = (t*t - 2.*t + 1) * g_coo[i] * g_coo[i] + t * t * g_coo[i + 1] * g_coo[i + 1]
-			- 2. * (t*t - t) * g_coo[i] * g_coo[i + 1] * cos(M_2PI / N) - f_coo[i];
+			- 2. * (t*t - t) * g_coo[i] * g_coo[i + 1] * cos(M_2PI / N) - f_coo[i] * f_coo[i];
 		sum = sum + (tmp_sum * tmp_sum);
 	}
 	{
 		tmp_sum = (t*t - 2.*t + 1) * g_coo[N - 1] * g_coo[N - 1] + t * t * g_coo[0] * g_coo[0]
-			- 2. * (t*t - t) * g_coo[N - 1] * g_coo[0] * cos(M_2PI / N) - f_coo[N - 1];
+			- 2. * (t*t - t) * g_coo[N - 1] * g_coo[0] * cos(M_2PI / N) - f_coo[N - 1] * f_coo[N - 1];
+		sum = sum + (tmp_sum * tmp_sum);
+	}
+
+	return sum;
+}
+
+//s1;
+struct my_f_params { std::vector<double> f_coo; std::vector<double> g_coo; };
+
+double compute_angle_functional(double t, void * p)
+{
+	struct my_f_params * params = (struct my_f_params *) p;
+	std::vector<double> f_coo = params->f_coo;
+	std::vector<double> g_coo = params->g_coo;
+	const double M_2PI = 2. * M_PI;
+	const uint32_t N = f_coo.size();
+
+	double sum = 0.;
+	double tmp_sum;
+	for (uint32_t i = 0; i < N - 1; i++)
+	{
+		tmp_sum = sqrt((t*t - 2.*t + 1) * g_coo[i] * g_coo[i] + t * t * g_coo[i + 1] * g_coo[i + 1]
+			- 2. * (t*t - t) * g_coo[i] * g_coo[i + 1] * cos(M_2PI / N)) - f_coo[i];
+		sum = sum + (tmp_sum * tmp_sum);
+	}
+	{
+		tmp_sum = sqrt((t*t - 2.*t + 1) * g_coo[N - 1] * g_coo[N - 1] + t * t * g_coo[0] * g_coo[0]
+			- 2. * (t*t - t) * g_coo[N - 1] * g_coo[0] * cos(M_2PI / N)) - f_coo[N - 1];
 		sum = sum + (tmp_sum * tmp_sum);
 	}
 
@@ -567,6 +619,8 @@ uint32_t Solver::edit_angle_quad(double &ret_rot_angle)
 				ret_rot_angle = -d_coeff / c_coeff;
 				double value_0 = compute_angle_quad_functional(g_coo, f_coo, ret_rot_angle);
 				ret_rot_angle = value_0 < border_min.s2 ? ret_rot_angle : border_min.t;
+				if (ret_rot_angle < 0. || ret_rot_angle > 1.)
+					ret_rot_angle = border_min.t;
 				return 1;
 			}
 
@@ -581,9 +635,23 @@ uint32_t Solver::edit_angle_quad(double &ret_rot_angle)
 			EngVal value_x_0(x[0], compute_angle_quad_functional(g_coo, f_coo, x[0]));
 			EngVal value_x_1(x[1], compute_angle_quad_functional(g_coo, f_coo, x[1]));
 
-			ret_rot_angle = std::min({ border_min, value_x_0, value_x_1 }, [](const EngVal & v1, const EngVal & v2) {
-				return v1.s2 < v2.s2;
-			}).t;
+			std::vector<EngVal> vals2comp;
+			vals2comp.push_back(border_min);
+			if (!(value_x_0.t < 0. || value_x_0.t > 1.))
+				vals2comp.push_back(value_x_0);
+			if (!(value_x_1.t < 0. || value_x_1.t > 1.))
+				vals2comp.push_back(value_x_1);
+
+			double min_s = vals2comp[0].s2;
+			ret_rot_angle = vals2comp[0].t;
+			for (auto value : vals2comp)
+			{
+				if (value.s2 < min_s)
+				{
+					min_s = value.s2;
+					ret_rot_angle = value.t;
+				}
+			}
 			return 1;
 		}
 
@@ -599,18 +667,109 @@ uint32_t Solver::edit_angle_quad(double &ret_rot_angle)
 			EngVal value_x_1(x[1], compute_angle_quad_functional(g_coo, f_coo, x[1]));
 			EngVal value_x_2(x[2], compute_angle_quad_functional(g_coo, f_coo, x[2]));
 
-			ret_rot_angle = std::min({ border_min, value_x_0, value_x_1, value_x_2 }, [](const EngVal & v1, const EngVal & v2) {
-				return v1.s2 < v2.s2;
-			}).t;
+
+			std::vector<EngVal> vals2comp;
+			vals2comp.push_back(border_min);
+			if (!(value_x_0.t < 0. || value_x_0.t > 1.))
+				vals2comp.push_back(value_x_0);
+			if (!(value_x_1.t < 0. || value_x_1.t > 1.))
+				vals2comp.push_back(value_x_1);
+			if (!(value_x_2.t < 0. || value_x_2.t > 1.))
+				vals2comp.push_back(value_x_2);
+
+			double min_s = vals2comp[0].s2;
+			ret_rot_angle = vals2comp[0].t;
+			for (auto value : vals2comp)
+			{
+				if (value.s2 < min_s)
+				{
+					min_s = value.s2;
+					ret_rot_angle = value.t;
+				}
+			}
 		}
 		else
 		{
 			EngVal value_x_0(x[0], compute_angle_quad_functional(g_coo, f_coo, x[0]));
 
-			ret_rot_angle = std::min({ border_min, value_x_0 }, [](const EngVal & v1, const EngVal & v2) {
-				return v1.s2 < v2.s2;
-			}).t;
+			std::vector<EngVal> vals2comp;
+			vals2comp.push_back(border_min);
+			if (!(value_x_0.t < 0. || value_x_0.t > 1.))
+				vals2comp.push_back(value_x_0);
+
+			double min_s = vals2comp[0].s2;
+			ret_rot_angle = vals2comp[0].t;
+			for (auto value : vals2comp)
+			{
+				if (value.s2 < min_s)
+				{
+					min_s = value.s2;
+					ret_rot_angle = value.t;
+				}
+			}
 		}
-		return 1;
+
 	}
+	return 1;
+}
+
+uint32_t Solver::edit_angle(double &ret_rot_angle)
+{
+	for (auto task : tasks)
+	{
+		int status;
+		int iter = 0, max_iter = 1000;
+		const gsl_min_fminimizer_type *T;
+		gsl_min_fminimizer *s;
+		double  m = 0.5;
+		double a = 0.0, b = 1.0;
+
+		gsl_function F;
+		struct my_f_params params = { task.f.get_poly_on_mesh(), task.g.get_poly_on_mesh() };
+		F.function = &compute_angle_functional;
+		F.params = &params;
+
+		T = gsl_min_fminimizer_goldensection;
+		s = gsl_min_fminimizer_alloc(T);
+		gsl_min_fminimizer_set(s, &F, m, a, b);
+
+		printf("using %s method\n", gsl_min_fminimizer_name(s));
+
+		printf("%5s [%9s, %9s] %9s %9s\n",
+			"iter", "lower", "upper", "min", "err(est)");
+
+		printf("%5d [%.7f, %.7f] %.7f %.7f\n",
+			iter, a, b, m, b - a);
+
+		do
+		{
+			iter++;
+			status = gsl_min_fminimizer_iterate(s);
+
+			m = gsl_min_fminimizer_x_minimum(s);
+			a = gsl_min_fminimizer_x_lower(s);
+			b = gsl_min_fminimizer_x_upper(s);
+
+			status = gsl_min_test_interval(a, b, 1.e-9, 0.0);
+
+			if(status == GSL_SUCCESS)
+				printf("Converged:\n");
+
+			printf("%5d [%.7f, %.7f] "
+				"%.7f %.7f\n",
+				iter, a, b, m, b - a);
+		} while (status == GSL_CONTINUE && iter < max_iter);
+
+		gsl_min_fminimizer_free(s);
+		ret_rot_angle = m;
+
+		double s1_0 = compute_angle_functional(0., &params);
+		double s1_1 = compute_angle_functional(1., &params);
+		double s1_t = compute_angle_functional(m, &params);
+		printf("\n%9s %9s %9s\n", "s1(0)", "s1(t)", "s1(1)");
+		printf("%.7f %.7f %.7f\n", s1_0, s1_t, s1_1);
+
+		return status;
+	}
+	return 1;
 }

@@ -15,6 +15,7 @@ public:
 	std::vector<double> get_poly_on_mesh() const { return on_mesh; }
 	void create_from_regular_poly(uint16_t n_angle);
 	void project_to_mesh(uint32_t rot);
+	void shift_poly_on_mesh(double t);
 private:
 	uint32_t n_vertices;
 	uint32_t mesh_size;
@@ -40,6 +41,7 @@ public:
 	void solve2();
 	bool is_refinement();
 	uint32_t edit_angle_quad(double &ret_rot_angle); // minimum of s2 functional
+	uint32_t edit_angle(double &ret_rot_angle); // minimum of s1 functional
 private:
 	std::vector<func> tasks;
 };

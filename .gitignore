@@ -260,3 +260,4 @@ paket-files/
 __pycache__/
 *.pyc
 /fftw-3.3.5-dll64
+/msvc2017_64

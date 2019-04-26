@@ -13,11 +13,12 @@ int main(int argc, char* argv[])
 
 	Polygon f(4, N);
 	f.create_from_regular_poly(4);
-	f.project_to_mesh(31);
+	f.project_to_mesh(0);
 
-	Polygon g(4, 4);
+	Polygon g(4, N);
 	g.create_from_regular_poly(4);
 	g.project_to_mesh(0);
+	g.shift_poly_on_mesh(1./3.);
 
 	func task;
 	task.f = f;
@@ -28,7 +29,11 @@ int main(int argc, char* argv[])
 	//std::fill(task.w.begin() + 3 * N / 4 + 1, task.w.end(), 0.);
 
 	Solver slv(task);
-	slv.is_refinement();
+	//slv.is_refinement();
+	double t(-1.);
+	slv.edit_angle(t);
+	std::cout.precision(15);
+	std::cout << "\nminimum: " << std::fixed << t << std::endl;
 
 #else
 	Polygon f(4, N);
