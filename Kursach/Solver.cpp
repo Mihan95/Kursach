@@ -5,6 +5,7 @@
 #include "poly34.h"
 #include "gsl_min.h"
 #include <gsl/gsl_errno.h>
+#include "gsl_multimin.h"
 
 #define USE_FFTW
 
@@ -484,7 +485,7 @@ static double compute_angle_quad_functional(const std::vector<double> & g_coo, c
 //s1;
 struct my_f_params { std::vector<double> f_coo; std::vector<double> g_coo; };
 
-double compute_angle_functional(double t, void * p)
+double compute_angle_functional(const gsl_vector *v, void * p)
 {
 	struct my_f_params * params = (struct my_f_params *) p;
 	std::vector<double> f_coo = params->f_coo;
@@ -494,6 +495,7 @@ double compute_angle_functional(double t, void * p)
 
 	double sum = 0.;
 	double tmp_sum;
+	double t = gsl_vector_get(v, 0);
 	for (uint32_t i = 0; i < N - 1; i++)
 	{
 		tmp_sum = sqrt((t*t - 2.*t + 1) * g_coo[i] * g_coo[i] + t * t * g_coo[i + 1] * g_coo[i + 1]
@@ -508,6 +510,60 @@ double compute_angle_functional(double t, void * p)
 
 	return sum;
 }
+
+void compute_derivative_angle_functional(const gsl_vector *v, void *p, gsl_vector *df)
+{
+	struct my_f_params * params = (struct my_f_params *) p;
+	std::vector<double> f_coo = params->f_coo;
+	std::vector<double> g_coo = params->g_coo;
+	const double M_2PI = 2. * M_PI;
+	const uint32_t N = f_coo.size();
+
+	double sum = 0.;
+	double tmp_sum;
+	double der_tmp_sum;
+	double t = gsl_vector_get(v, 0);
+	for (uint32_t i = 0; i < N - 1; i++)
+	{
+		tmp_sum = (t*t - 2.*t + 1) * g_coo[i] * g_coo[i] + t * t * g_coo[i + 1] * g_coo[i + 1]
+			- 2. * (t*t - t) * g_coo[i] * g_coo[i + 1] * cos(M_2PI / N);
+
+		if (fabs(tmp_sum) < 1.e-15)
+		{
+			gsl_vector_set(df, 0, GSL_NAN);
+			printf("tmp_sum == 0\n");
+			return;
+		}
+
+		der_tmp_sum = 2.*((t - 1)*g_coo[i] * g_coo[i] + t * g_coo[i + 1] * g_coo[i + 1] - (2 * t - 1)*g_coo[i] * g_coo[i + 1] * cos(M_2PI / N));
+
+		sum = sum + (der_tmp_sum - f_coo[i] * der_tmp_sum / sqrt(tmp_sum));
+	}
+	{
+		tmp_sum = (t*t - 2.*t + 1) * g_coo[N-1] * g_coo[N - 1] + t * t * g_coo[0] * g_coo[0]
+			- 2. * (t*t - t) * g_coo[N - 1] * g_coo[0] * cos(M_2PI / N);
+
+		if (fabs(tmp_sum) < 1.e-15)
+		{
+			gsl_vector_set(df, 0, GSL_NAN);
+			printf("tmp_sum == 0\n");
+			return;
+		}
+
+		der_tmp_sum = 2.*((t - 1)*g_coo[N - 1] * g_coo[N - 1] + t * g_coo[0] * g_coo[0] - (2 * t - 1)*g_coo[N - 1] * g_coo[0] * cos(M_2PI / N));
+
+		sum = sum + (der_tmp_sum - f_coo[N - 1] * der_tmp_sum / sqrt(tmp_sum));
+	}
+
+	gsl_vector_set(df, 0, sum);
+}
+
+void fdf(const gsl_vector *x, void *params, double *f, gsl_vector *df)
+{
+	*f = compute_angle_functional(x, params);
+	compute_derivative_angle_functional(x, params, df);
+}
+
 
 struct EngVal
 {
@@ -719,56 +775,56 @@ uint32_t Solver::edit_angle(double &ret_rot_angle)
 	{
 		int status;
 		int iter = 0, max_iter = 1000;
-		const gsl_min_fminimizer_type *T;
-		gsl_min_fminimizer *s;
+		const gsl_multimin_fdfminimizer_type  *T;
+		gsl_multimin_fdfminimizer  *s;
 		double  m = 0.5;
 		double a = 0.0, b = 1.0;
 
-		gsl_function F;
+		gsl_multimin_function_fdf F;
 		struct my_f_params params = { task.f.get_poly_on_mesh(), task.g.get_poly_on_mesh() };
-		F.function = &compute_angle_functional;
+		F.n = 1;
+		F.f = &compute_angle_functional;
+		F.df = &compute_derivative_angle_functional;
+		F.fdf = &fdf;
 		F.params = &params;
 
-		T = gsl_min_fminimizer_goldensection;
-		s = gsl_min_fminimizer_alloc(T);
-		gsl_min_fminimizer_set(s, &F, m, a, b);
+		gsl_vector *x = gsl_vector_alloc(1);
+		gsl_vector_set(x, 0, 0.5);
 
-		printf("using %s method\n", gsl_min_fminimizer_name(s));
-
-		printf("%5s [%9s, %9s] %9s %9s\n",
-			"iter", "lower", "upper", "min", "err(est)");
-
-		printf("%5d [%.7f, %.7f] %.7f %.7f\n",
-			iter, a, b, m, b - a);
+		T = gsl_multimin_fdfminimizer_vector_bfgs2;
+		s = gsl_multimin_fdfminimizer_alloc(T,1);
+		gsl_multimin_fdfminimizer_set(s, &F, x, 0.5, 1.e-1);
 
 		do
 		{
 			iter++;
-			status = gsl_min_fminimizer_iterate(s);
+			status = gsl_multimin_fdfminimizer_iterate(s);
 
-			m = gsl_min_fminimizer_x_minimum(s);
-			a = gsl_min_fminimizer_x_lower(s);
-			b = gsl_min_fminimizer_x_upper(s);
+			if (status)
+				break;
 
-			status = gsl_min_test_interval(a, b, 1.e-9, 0.0);
+			status = gsl_multimin_test_gradient(s->gradient, 1.e-8);
 
-			if(status == GSL_SUCCESS)
-				printf("Converged:\n");
 
-			printf("%5d [%.7f, %.7f] "
-				"%.7f %.7f\n",
-				iter, a, b, m, b - a);
 		} while (status == GSL_CONTINUE && iter < max_iter);
 
-		gsl_min_fminimizer_free(s);
-		ret_rot_angle = m;
+		printf("iter = %d\n", iter);
 
-		double s1_0 = compute_angle_functional(0., &params);
-		double s1_1 = compute_angle_functional(1., &params);
-		double s1_t = compute_angle_functional(m, &params);
+		x = gsl_multimin_fdfminimizer_x(s);
+		ret_rot_angle = gsl_vector_get(x, 0);
+		gsl_vector *_0 = gsl_vector_alloc(1);
+		gsl_vector_set(_0, 0, 0.);
+		gsl_vector *_1 = gsl_vector_alloc(1);
+		gsl_vector_set(_1, 0, 1.);
+		
+
+		double s1_0 = compute_angle_functional(_0, &params);
+		double s1_1 = compute_angle_functional(_1, &params);
+		double s1_t = compute_angle_functional(x, &params);
 		printf("\n%9s %9s %9s\n", "s1(0)", "s1(t)", "s1(1)");
 		printf("%.7f %.7f %.7f\n", s1_0, s1_t, s1_1);
 
+		gsl_multimin_fdfminimizer_free(s);
 		return status;
 	}
 	return 1;

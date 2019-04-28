@@ -7,8 +7,8 @@
 //TO DO: добавить умножение на константы и на N во все нормы
 int main(int argc, char* argv[])
 {
-	const uint32_t N = 128;
-
+	const uint32_t N = 128*100;
+	const double shift = 0.25;
 #ifdef TEST_REF
 
 	Polygon f(4, N);
@@ -18,7 +18,7 @@ int main(int argc, char* argv[])
 	Polygon g(4, N);
 	g.create_from_regular_poly(4);
 	g.project_to_mesh(0);
-	g.shift_poly_on_mesh(1./3.);
+	g.shift_poly_on_mesh(shift);
 
 	func task;
 	task.f = f;
@@ -34,6 +34,7 @@ int main(int argc, char* argv[])
 	slv.edit_angle(t);
 	std::cout.precision(15);
 	std::cout << "\nminimum: " << std::fixed << t << std::endl;
+	std::cout << "origin_shift - finded_shift = " << std::fixed << 2.*M_PI*fabs(t-shift)/N << std::endl;
 
 #else
 	Polygon f(4, N);
