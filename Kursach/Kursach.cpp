@@ -7,7 +7,7 @@
 //TO DO: добавить умножение на константы и на N во все нормы
 int main(int argc, char* argv[])
 {
-	const uint32_t N = 128*100;
+	const uint32_t N = 128;
 	const double shift = 0.25;
 #ifdef TEST_REF
 
@@ -19,6 +19,9 @@ int main(int argc, char* argv[])
 	g.create_from_regular_poly(4);
 	g.project_to_mesh(0);
 	g.shift_poly_on_mesh(shift);
+	//g.shift_poly_on_mesh_op(shift);
+
+
 
 	func task;
 	task.f = f;
@@ -30,11 +33,13 @@ int main(int argc, char* argv[])
 
 	Solver slv(task);
 	//slv.is_refinement();
-	double t(-1.);
+	double t(shift);
 	slv.edit_angle(t);
+	double s1_e = slv.edge2edge_cut_angles_mismatching(shift);
+	printf("s1_e = %.15f\n", s1_e);
 	std::cout.precision(15);
 	std::cout << "\nminimum: " << std::fixed << t << std::endl;
-	std::cout << "origin_shift - finded_shift = " << std::fixed << 2.*M_PI*fabs(t-shift)/N << std::endl;
+	std::cout << "origin_shift - finded_shift = " << std::fixed << /*2.*M_PI**/fabs(t-shift)/*/N */<< std::endl;
 
 #else
 	Polygon f(4, N);

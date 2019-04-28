@@ -65,26 +65,51 @@ void Polygon::create_from_regular_poly(uint16_t n_angle)
 
 static double shift_point(double r1, double r2, double cos_, double t)
 {
-	double t_1 = t - 1;
+	double t_1 = t - 1.;
 	return sqrt(t_1*t_1 * r1*r1 + t * t*r2*r2 - 2.*t*t_1*r1*r2*cos_);
+}
+
+static double shift_point2(const double r1, const double r2, const double t, const uint32_t N)
+{
+	const double M_2PI = 2. * M_PI;
+	return (r1*r2*sin(M_2PI / N) / (r2 * sin(M_2PI * (1 - t) / N) + r1 * sin(M_2PI * t / N)));
 }
 
 void Polygon::shift_poly_on_mesh(double t)
 {
 	const uint32_t N = on_mesh.size();
-	const double cos_ = cos(2. * M_PI / N);
 
 	std::vector<double> new_on_mesh(N);
+	//new_on_mesh.resize(N);
 	{
-		new_on_mesh[0] = shift_point(on_mesh[0], on_mesh[N-1], cos_, t);
+		new_on_mesh[0] = shift_point2(on_mesh[0], on_mesh[N-1], t, N);
 	}
 	for (uint32_t i = 1; i < N; i++)
 	{
-		new_on_mesh[i] = shift_point(on_mesh[i], on_mesh[i - 1], cos_, t);
+		new_on_mesh[i] = shift_point2(on_mesh[i], on_mesh[i - 1], t, N);
 	}
-
 	on_mesh = new_on_mesh;
 }
+
+//void Polygon::shift_poly_on_mesh_op(double t)
+//{
+//	const uint32_t N = on_mesh.size();
+//	const double cos_ = cos(2. * M_PI / N);
+//
+//	std::vector<double> tmp_on_mesh(N);
+//	std::vector<double> diff_on_mesh(N);
+//
+//	for (uint32_t i = 0; i < N-1; i++)
+//	{
+//		tmp_on_mesh[i] = shift_point2(new_on_mesh[i], new_on_mesh[i + 1], t, N);
+//		diff_on_mesh[i] = fabs(on_mesh[i] - tmp_on_mesh[i]);
+//	}
+//	{
+//		tmp_on_mesh[N-1] = shift_point2(new_on_mesh[N - 1], new_on_mesh[0], t, N);
+//		diff_on_mesh[N - 1] = fabs(on_mesh[N - 1] - tmp_on_mesh[N - 1]);
+//	}
+//	on_mesh = new_on_mesh;
+//}
 
 void Polygon::project_to_mesh(uint32_t rot)
 {
@@ -498,13 +523,15 @@ double compute_angle_functional(const gsl_vector *v, void * p)
 	double t = gsl_vector_get(v, 0);
 	for (uint32_t i = 0; i < N - 1; i++)
 	{
-		tmp_sum = sqrt((t*t - 2.*t + 1) * g_coo[i] * g_coo[i] + t * t * g_coo[i + 1] * g_coo[i + 1]
-			- 2. * (t*t - t) * g_coo[i] * g_coo[i + 1] * cos(M_2PI / N)) - f_coo[i];
+		tmp_sum = g_coo[i] * g_coo[i+1] * sin(M_2PI / N)
+			/ (g_coo[i+1] * sin(M_2PI * (1 - t) / N) + g_coo[i] * sin(M_2PI * t / N))
+			- f_coo[i];
 		sum = sum + (tmp_sum * tmp_sum);
 	}
 	{
-		tmp_sum = sqrt((t*t - 2.*t + 1) * g_coo[N - 1] * g_coo[N - 1] + t * t * g_coo[0] * g_coo[0]
-			- 2. * (t*t - t) * g_coo[N - 1] * g_coo[0] * cos(M_2PI / N)) - f_coo[N - 1];
+		tmp_sum = g_coo[N - 1] * g_coo[0] * sin(M_2PI / N)
+			/ (g_coo[0] * sin(M_2PI * (1 - t) / N) + g_coo[N - 1] * sin(M_2PI * t / N))
+			- f_coo[N - 1];
 		sum = sum + (tmp_sum * tmp_sum);
 	}
 
@@ -516,43 +543,47 @@ void compute_derivative_angle_functional(const gsl_vector *v, void *p, gsl_vecto
 	struct my_f_params * params = (struct my_f_params *) p;
 	std::vector<double> f_coo = params->f_coo;
 	std::vector<double> g_coo = params->g_coo;
-	const double M_2PI = 2. * M_PI;
 	const uint32_t N = f_coo.size();
+	const double M_2PI = 2. * M_PI;
+	const double M_2PI_N = M_2PI / N;
 
-	double sum = 0.;
-	double tmp_sum;
-	double der_tmp_sum;
-	double t = gsl_vector_get(v, 0);
+	const double t = gsl_vector_get(v, 0);
+	const double _1_t = 1. - t;
+
+	double a(0.), b(0.), b_der(0);
+	double sum(0.), tmp_sum(0.);
 	for (uint32_t i = 0; i < N - 1; i++)
 	{
-		tmp_sum = (t*t - 2.*t + 1) * g_coo[i] * g_coo[i] + t * t * g_coo[i + 1] * g_coo[i + 1]
-			- 2. * (t*t - t) * g_coo[i] * g_coo[i + 1] * cos(M_2PI / N);
+		b = g_coo[i+1] * sin(M_2PI_N * _1_t) + g_coo[i] * sin(M_2PI_N * t);
 
-		if (fabs(tmp_sum) < 1.e-15)
+		if (fabs(b) < 1.e-15)
 		{
 			gsl_vector_set(df, 0, GSL_NAN);
-			printf("tmp_sum == 0\n");
+			printf("b == 0\n");
 			return;
 		}
 
-		der_tmp_sum = 2.*((t - 1)*g_coo[i] * g_coo[i] + t * g_coo[i + 1] * g_coo[i + 1] - (2 * t - 1)*g_coo[i] * g_coo[i + 1] * cos(M_2PI / N));
+		a = g_coo[i] * g_coo[i+1] * sin(M_2PI_N);
+		b_der = M_2PI_N * (g_coo[i] * cos(M_2PI_N * t) - g_coo[i+1] * cos(M_2PI_N * (_1_t)));
 
-		sum = sum + (der_tmp_sum - f_coo[i] * der_tmp_sum / sqrt(tmp_sum));
+		tmp_sum = -2. * a * b_der * (a / b - f_coo[i]) / (b*b);
+		sum = sum + tmp_sum;
 	}
 	{
-		tmp_sum = (t*t - 2.*t + 1) * g_coo[N-1] * g_coo[N - 1] + t * t * g_coo[0] * g_coo[0]
-			- 2. * (t*t - t) * g_coo[N - 1] * g_coo[0] * cos(M_2PI / N);
+		b = g_coo[0] * sin(M_2PI_N * _1_t) + g_coo[N - 1] * sin(M_2PI_N * t);
 
-		if (fabs(tmp_sum) < 1.e-15)
+		if (fabs(b) < 1.e-15)
 		{
 			gsl_vector_set(df, 0, GSL_NAN);
-			printf("tmp_sum == 0\n");
+			printf("b == 0\n");
 			return;
 		}
 
-		der_tmp_sum = 2.*((t - 1)*g_coo[N - 1] * g_coo[N - 1] + t * g_coo[0] * g_coo[0] - (2 * t - 1)*g_coo[N - 1] * g_coo[0] * cos(M_2PI / N));
+		a = g_coo[N - 1] * g_coo[0] * sin(M_2PI_N);
+		b_der = M_2PI_N * (g_coo[N - 1] * cos(M_2PI_N * t) - g_coo[0] * cos(M_2PI_N * (_1_t)));
 
-		sum = sum + (der_tmp_sum - f_coo[N - 1] * der_tmp_sum / sqrt(tmp_sum));
+		tmp_sum = -2. * a * b_der * (a / b - f_coo[N - 1]) / (b*b);
+		sum = sum + tmp_sum;
 	}
 
 	gsl_vector_set(df, 0, sum);
@@ -563,7 +594,6 @@ void fdf(const gsl_vector *x, void *params, double *f, gsl_vector *df)
 	*f = compute_angle_functional(x, params);
 	compute_derivative_angle_functional(x, params, df);
 }
-
 
 struct EngVal
 {
@@ -777,8 +807,6 @@ uint32_t Solver::edit_angle(double &ret_rot_angle)
 		int iter = 0, max_iter = 1000;
 		const gsl_multimin_fdfminimizer_type  *T;
 		gsl_multimin_fdfminimizer  *s;
-		double  m = 0.5;
-		double a = 0.0, b = 1.0;
 
 		gsl_multimin_function_fdf F;
 		struct my_f_params params = { task.f.get_poly_on_mesh(), task.g.get_poly_on_mesh() };
@@ -803,12 +831,16 @@ uint32_t Solver::edit_angle(double &ret_rot_angle)
 			if (status)
 				break;
 
-			status = gsl_multimin_test_gradient(s->gradient, 1.e-8);
+			status = gsl_multimin_test_gradient(s->gradient, 1.e-15);
 
 
 		} while (status == GSL_CONTINUE && iter < max_iter);
 
 		printf("iter = %d\n", iter);
+
+		gsl_vector *_shift = gsl_vector_alloc(1);
+		gsl_vector_set(_shift, 0, ret_rot_angle);
+		double s1_shift = compute_angle_functional(_shift, &params);
 
 		x = gsl_multimin_fdfminimizer_x(s);
 		ret_rot_angle = gsl_vector_get(x, 0);
@@ -821,11 +853,39 @@ uint32_t Solver::edit_angle(double &ret_rot_angle)
 		double s1_0 = compute_angle_functional(_0, &params);
 		double s1_1 = compute_angle_functional(_1, &params);
 		double s1_t = compute_angle_functional(x, &params);
-		printf("\n%9s %9s %9s\n", "s1(0)", "s1(t)", "s1(1)");
-		printf("%.7f %.7f %.7f\n", s1_0, s1_t, s1_1);
+		printf("\n%17s | %17s | %17s | %17s\n", "s1(0)", "s1(t)", "s1(1)", "s1(shift)");
+		printf("%.15f | %.15f | %.15f | %.15f\n", s1_0, s1_t, s1_1, s1_shift);
 
 		gsl_multimin_fdfminimizer_free(s);
 		return status;
 	}
 	return 1;
+}
+
+double Solver::edge2edge_cut_angles_mismatching(double t)
+{
+	auto & f = tasks[0].f.get_poly_on_mesh();
+	auto & g = tasks[0].g.get_poly_on_mesh();
+
+	const uint32_t N = f.size();
+	const uint32_t N_ang = tasks[0].f.get_angles_number();
+	const double cos_ = cos(2. * M_PI / N);
+
+	if (N % N_ang != 0 || N < N_ang)
+		return -1.;
+
+	const uint32_t verts2poly_edge = N / N_ang;
+	double tmp(0.), measure(0.);
+	{
+		tmp = shift_point2(g[N-1], g[0], t, N);
+		tmp = tmp - f[0];
+		measure = measure + tmp * tmp;
+	}
+	for (uint32_t i = verts2poly_edge; i < N; i += verts2poly_edge)
+	{
+		tmp = shift_point2(g[i-1], g[i], t, N);
+		tmp = tmp - f[i];
+		measure = measure + tmp * tmp;
+	}
+	return measure;
 }
