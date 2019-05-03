@@ -6,6 +6,7 @@
 #include "gsl_min.h"
 #include <gsl/gsl_errno.h>
 #include "gsl_multimin.h"
+#include <fstream>
 
 #define USE_FFTW
 
@@ -136,6 +137,37 @@ void Polygon::project_to_mesh(uint32_t rot)
 	}
 
 	std::rotate(on_mesh.rbegin(), on_mesh.rbegin() + rot, on_mesh.rend());
+}
+
+void Polygon::read_polygon_on_mesh(std::string input_name)
+{
+	std::ifstream in(input_name);
+	if (in.is_open())
+	{
+		uint32_t n;
+		in >> n;
+		on_mesh.clear();
+		poly.clear();
+		on_mesh.reserve(n);
+		poly.reserve(n);
+		double x, y, r;
+
+		uint32_t i = 0;
+		while (in >> x >> y)
+		{
+			i++;
+			r = sqrt(x * x + y * y);
+			on_mesh.push_back(r);
+			poly.push_back(r);
+		}
+		if (n != i)
+			std::cout << "n = " << n << " != " << i << " = i\n";
+	}
+	else
+		std::cout << input_name.c_str() << " open error\n";
+	in.close();
+	//for (uint32_t i = 0; i < 10; i++)
+	//	std::cout << on_mesh[i] << std::endl;
 }
 
 Solver::Solver(func &poly_pare)

@@ -17,6 +17,7 @@ public:
 	void create_from_regular_poly(uint16_t n_angle);
 	void project_to_mesh(uint32_t rot);
 	void shift_poly_on_mesh(double t);
+	void read_polygon_on_mesh(std::string input_name);
 	//void Polygon::shift_poly_on_mesh_op(double t); // for debug
 private:
 	uint32_t n_vertices;

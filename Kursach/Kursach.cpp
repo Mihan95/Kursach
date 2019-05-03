@@ -9,6 +9,7 @@ int main(int argc, char* argv[])
 {
 	const uint32_t N = 128;
 	const double shift = 0.25;
+
 #ifdef TEST_REF
 
 	Polygon f(4, N);
@@ -32,7 +33,6 @@ int main(int argc, char* argv[])
 	//std::fill(task.w.begin() + 3 * N / 4 + 1, task.w.end(), 0.);
 
 	Solver slv(task);
-	//slv.is_refinement();
 	double t(shift);
 	slv.edit_angle(t);
 	double s1_e = slv.edge2edge_cut_angles_mismatching(shift);

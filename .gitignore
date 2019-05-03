@@ -261,3 +261,16 @@ __pycache__/
 *.pyc
 /fftw-3.3.5-dll64
 /msvc2017_64
+/data_debug/1/girdleDat
+/data_debug/1/girdleOri
+/data_debug/2/tableOri
+/data_debug/2/tableDat
+/data_debug/2/girdleOri
+/data_debug/2/girdleDat
+/data_debug/3/tableOri
+/data_debug/3/tableDat
+/data_debug/3/reflectEdges
+/data_debug/3/girdleOri
+/data_debug/3/girdleDat
+/debug.zip
+/Kursach/girdleOri
