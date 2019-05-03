@@ -64,13 +64,7 @@ void Polygon::create_from_regular_poly(uint16_t n_angle)
 
 }
 
-static double shift_point(double r1, double r2, double cos_, double t)
-{
-	double t_1 = t - 1.;
-	return sqrt(t_1*t_1 * r1*r1 + t * t*r2*r2 - 2.*t*t_1*r1*r2*cos_);
-}
-
-static double shift_point2(const double r1, const double r2, const double t, const uint32_t N)
+static double shift_point(const double r1, const double r2, const double t, const uint32_t N)
 {
 	const double M_2PI = 2. * M_PI;
 	return (r1*r2*sin(M_2PI / N) / (r2 * sin(M_2PI * (1 - t) / N) + r1 * sin(M_2PI * t / N)));
@@ -83,11 +77,11 @@ void Polygon::shift_poly_on_mesh(double t)
 	std::vector<double> new_on_mesh(N);
 	//new_on_mesh.resize(N);
 	{
-		new_on_mesh[0] = shift_point2(on_mesh[0], on_mesh[N-1], t, N);
+		new_on_mesh[0] = shift_point(on_mesh[0], on_mesh[N-1], t, N);
 	}
 	for (uint32_t i = 1; i < N; i++)
 	{
-		new_on_mesh[i] = shift_point2(on_mesh[i], on_mesh[i - 1], t, N);
+		new_on_mesh[i] = shift_point(on_mesh[i], on_mesh[i - 1], t, N);
 	}
 	on_mesh = new_on_mesh;
 }
@@ -433,112 +427,6 @@ void Solver::solve2()
 	}
 }
 
-bool Solver::is_refinement()
-{
-	for (auto task : tasks)
-	{
-		const double g_angle = 2. * M_PI / task.g.get_mesh_size();
-		const double f_angle = 2. * M_PI / task.f.get_mesh_size();
-		const double sin_g_angle = sin(g_angle);
-		double alpha1 = g_angle;
-		double alpha  = f_angle;
-		double sum_f   = 0.;
-		double sum_g   = 0.;
-		double sum_g_1 = 0.;
-
-		std::vector<double> gi;
-		std::vector<double> gi_1;
-
-		for (auto f_i : task.f.get_poly_on_mesh())
-		{
-			if (alpha < alpha1)
-			{  /* Для оптимизации НАЧАЛО */
-				const double angle_gi1_1 = alpha - (alpha1 - g_angle);
-				const double angle_gi1 = angle_gi1_1 - f_angle;
-
-				const double angle_gi1_2 = alpha1 - alpha;
-				const double angle_gi2 = angle_gi1_2 + f_angle;
-				/* КОНЕЦ для оптимизации */
-
-				gi.push_back( sin_g_angle / ( sin(angle_gi1) + sin(angle_gi2) ) );
-				gi_1.push_back( sin_g_angle / ( sin(angle_gi1_1) + sin(angle_gi1_2) ) );
-
-				double diff_g_i = gi_1.back() - gi.back();
-				sum_g   += gi.back() * diff_g_i;
-				sum_g_1 += gi_1.back() * diff_g_i;
-				sum_f   += f_i * diff_g_i;
-				alpha += f_angle;
-			}
-			else
-			{
-				alpha1 += g_angle;
-				alpha  += f_angle;
-			}
-		}
-		const double t = (sum_f - sum_g_1) / (sum_g - sum_g_1);
-
-		/*посчитаем нормы*/
-		alpha1 = g_angle;
-		alpha  = f_angle;
-		double norm_before = 0.;
-		double norm_after  = 0.;
-		for (uint32_t i = 0; i < task.f.get_mesh_size(); i++)
-		{
-			if (alpha < alpha1)
-			{  
-				const auto fi = task.f.get_poly_on_mesh()[i];
-				/* Для оптимизации НАЧАЛО */
-				const double fi_gi = fi - gi[i];
-				const double fi_gi_t = fi - t * gi[i] - (1. - t) * gi_1[i];
-				/* КОНЕЦ для оптимизации */
-				
-				norm_before += fi_gi * fi_gi;
-				norm_after  += fi_gi_t * fi_gi_t;
-				alpha += f_angle;
-			}
-			else
-			{
-				alpha1 += g_angle;
-				alpha  += f_angle;
-			}
-		}
-
-		norm_before = sqrt(norm_before);
-		norm_after  = sqrt(norm_after);
-		norm_before /= task.f.get_mesh_size();
-		norm_after  /= task.f.get_mesh_size();
-		std::cout << "Norm before: " << norm_before << std::endl;
-		std::cout << "Norm after: "  << norm_after  << std::endl;
-		gi.clear();
-		gi_1.clear();
-	}
-	return true;
-
-}
-
-//s2;
-static double compute_angle_quad_functional(const std::vector<double> & g_coo, const std::vector<double> & f_coo, double t)
-{
-	const double M_2PI = 2. * M_PI;
-	const uint32_t N = f_coo.size();
-
-	double sum = 0.;
-	double tmp_sum;
-	for (uint32_t i = 0; i < N-1; i++)
-	{
-		tmp_sum = (t*t - 2.*t + 1) * g_coo[i] * g_coo[i] + t * t * g_coo[i + 1] * g_coo[i + 1]
-			- 2. * (t*t - t) * g_coo[i] * g_coo[i + 1] * cos(M_2PI / N) - f_coo[i] * f_coo[i];
-		sum = sum + (tmp_sum * tmp_sum);
-	}
-	{
-		tmp_sum = (t*t - 2.*t + 1) * g_coo[N - 1] * g_coo[N - 1] + t * t * g_coo[0] * g_coo[0]
-			- 2. * (t*t - t) * g_coo[N - 1] * g_coo[0] * cos(M_2PI / N) - f_coo[N - 1] * f_coo[N - 1];
-		sum = sum + (tmp_sum * tmp_sum);
-	}
-
-	return sum;
-}
-
 //s1;
 struct my_f_params { std::vector<double> f_coo; std::vector<double> g_coo; };
 
@@ -635,202 +523,6 @@ struct EngVal
 	EngVal() : t(0.), s2(0.) {}
 };
 
-uint32_t Solver::edit_angle_quad(double &ret_rot_angle)
-{
-
-	const double M_2PI = 2. * M_PI;
-	//Construct equation coeffs
-	for (auto task : tasks)
-	{
-		const Polygon & f = task.f;
-		const Polygon & g = task.g;
-		const std::vector<double> & g_coo = g.get_poly_on_mesh();
-		const std::vector<double> & f_coo = f.get_poly_on_mesh();
-
-		const uint32_t N = task.f.get_mesh_size();
-		//TODO: calculate rot_angle first
-
-		/////////////////////////////////////////////
-		double border_value_0(0.), border_value_1(0.);
-		for (uint32_t i = 0; i < N; i++)
-		{
-			double tmp_sum = g_coo[i] * g_coo[i] - f_coo[i] * f_coo[i];
-			border_value_0 = border_value_0 + tmp_sum * tmp_sum;
-		}
-		for (uint32_t i = 0; i < N-1; i++)
-		{
-			double tmp_sum = g_coo[i+1] * g_coo[i+1] - f_coo[i] * f_coo[i];
-			border_value_1 = border_value_1 + tmp_sum * tmp_sum;
-		}
-		{
-			double tmp_sum = g_coo[0] * g_coo[0] - f_coo[N - 1] * f_coo[N - 1];
-			border_value_1 = border_value_1 + tmp_sum * tmp_sum;
-		}
-		//(t, s2(t))
-		EngVal border_min(0., 0.);
-		if (border_value_0 < border_value_1)
-		{			
-			border_min.t = 0.;
-			border_min.s2 = border_value_0;
-		}
-		else
-		{
-			border_min.t = 1.;
-			border_min.s2 = border_value_1;			
-		}
-
-		
-		//////////////////////////////////////////////
-
-		double *a = new double[N];
-		double a_coeff(0.), b_coeff(0.), c_coeff(0.), d_coeff(0.);
-		double tmp_sum_A(0.), tmp_sum_B(0.), tmp_sum_C(0.);
-		//a, b, c and A, B, C are absolutely independent 
-		double gg = 0.;
-		double ggcos = 0.;
-		for (uint32_t i = 0; i < N-1; i++)
-		{
-			gg = g_coo[i] * g_coo[i];
-			ggcos = g_coo[i] * g_coo[i + 1] * cos(M_2PI / N);
-
-			tmp_sum_A = gg + g_coo[i + 1] * g_coo[i + 1] - 2 * ggcos;
-
-			tmp_sum_B = ggcos - gg;
-
-			tmp_sum_C = gg - f_coo[i] * f_coo[i];
-
-			//Construct equation coeffs
-			a_coeff = a_coeff + (tmp_sum_A * tmp_sum_A);
-			b_coeff = b_coeff + (tmp_sum_A * tmp_sum_B);
-			c_coeff = c_coeff + (2. * tmp_sum_B + tmp_sum_C * tmp_sum_A);
-			d_coeff = d_coeff + (tmp_sum_B * tmp_sum_C);
-		}
-		{
-			gg = g_coo[N - 1] * g_coo[N - 1];
-			ggcos = g_coo[N - 1] * g_coo[0] * cos(M_2PI / N);
-
-			tmp_sum_A = gg + g_coo[0] * g_coo[0] - 2 * ggcos;
-
-			tmp_sum_B = ggcos - gg;
-
-			tmp_sum_C = gg - f_coo[N - 1] * f_coo[N - 1];
-
-			//Construct equation coeffs
-			a_coeff = a_coeff + (tmp_sum_A * tmp_sum_A);
-			b_coeff = b_coeff + (tmp_sum_A * tmp_sum_B);
-			c_coeff = c_coeff + (2. * tmp_sum_B + tmp_sum_C * tmp_sum_A);
-			d_coeff = d_coeff + (tmp_sum_B * tmp_sum_C);
-		}
-		b_coeff *= 3.;
-
-		if(fabs(a_coeff) < 1.e-15 && fabs(b_coeff) < 1.e-15 && fabs(c_coeff) < 1.e-15)
-		{
-			std::cout << "Solver::edit_angle_quad(): wrong a_coeff, b_coeff, c_coeff\n";
-			return -1;
-		}
-		
-		if (fabs(a_coeff) < 1.e-15)
-		{
-			if (fabs(b_coeff) < 1.e-15)
-			{
-				//This is linear equation
-				ret_rot_angle = -d_coeff / c_coeff;
-				double value_0 = compute_angle_quad_functional(g_coo, f_coo, ret_rot_angle);
-				ret_rot_angle = value_0 < border_min.s2 ? ret_rot_angle : border_min.t;
-				if (ret_rot_angle < 0. || ret_rot_angle > 1.)
-					ret_rot_angle = border_min.t;
-				return 1;
-			}
-
-			//This is quadratic equation
-			c_coeff /= b_coeff;
-			d_coeff /= b_coeff;
-			double * x = new double[2];
-			int32_t ret_val = SolveP2(x, c_coeff, d_coeff);
-			if (ret_val == 0)
-				std::cout << "Solver::edit_angle_quad() : no real root in quadratic equation\n";
-
-			EngVal value_x_0(x[0], compute_angle_quad_functional(g_coo, f_coo, x[0]));
-			EngVal value_x_1(x[1], compute_angle_quad_functional(g_coo, f_coo, x[1]));
-
-			std::vector<EngVal> vals2comp;
-			vals2comp.push_back(border_min);
-			if (!(value_x_0.t < 0. || value_x_0.t > 1.))
-				vals2comp.push_back(value_x_0);
-			if (!(value_x_1.t < 0. || value_x_1.t > 1.))
-				vals2comp.push_back(value_x_1);
-
-			double min_s = vals2comp[0].s2;
-			ret_rot_angle = vals2comp[0].t;
-			for (auto value : vals2comp)
-			{
-				if (value.s2 < min_s)
-				{
-					min_s = value.s2;
-					ret_rot_angle = value.t;
-				}
-			}
-			return 1;
-		}
-
-		//This is cubic equation
-		b_coeff /= a_coeff;
-		c_coeff /= a_coeff;
-		d_coeff /= a_coeff;
-		double * x = new double[3];
-		int32_t ret_val = SolveP3(x, b_coeff, c_coeff, d_coeff);
-		if (ret_val == 3)
-		{
-			EngVal value_x_0(x[0], compute_angle_quad_functional(g_coo, f_coo, x[0]));
-			EngVal value_x_1(x[1], compute_angle_quad_functional(g_coo, f_coo, x[1]));
-			EngVal value_x_2(x[2], compute_angle_quad_functional(g_coo, f_coo, x[2]));
-
-
-			std::vector<EngVal> vals2comp;
-			vals2comp.push_back(border_min);
-			if (!(value_x_0.t < 0. || value_x_0.t > 1.))
-				vals2comp.push_back(value_x_0);
-			if (!(value_x_1.t < 0. || value_x_1.t > 1.))
-				vals2comp.push_back(value_x_1);
-			if (!(value_x_2.t < 0. || value_x_2.t > 1.))
-				vals2comp.push_back(value_x_2);
-
-			double min_s = vals2comp[0].s2;
-			ret_rot_angle = vals2comp[0].t;
-			for (auto value : vals2comp)
-			{
-				if (value.s2 < min_s)
-				{
-					min_s = value.s2;
-					ret_rot_angle = value.t;
-				}
-			}
-		}
-		else
-		{
-			EngVal value_x_0(x[0], compute_angle_quad_functional(g_coo, f_coo, x[0]));
-
-			std::vector<EngVal> vals2comp;
-			vals2comp.push_back(border_min);
-			if (!(value_x_0.t < 0. || value_x_0.t > 1.))
-				vals2comp.push_back(value_x_0);
-
-			double min_s = vals2comp[0].s2;
-			ret_rot_angle = vals2comp[0].t;
-			for (auto value : vals2comp)
-			{
-				if (value.s2 < min_s)
-				{
-					min_s = value.s2;
-					ret_rot_angle = value.t;
-				}
-			}
-		}
-
-	}
-	return 1;
-}
-
 uint32_t Solver::edit_angle(double &ret_rot_angle)
 {
 	for (auto task : tasks)
@@ -892,32 +584,4 @@ uint32_t Solver::edit_angle(double &ret_rot_angle)
 		return status;
 	}
 	return 1;
-}
-
-double Solver::edge2edge_cut_angles_mismatching(double t)
-{
-	auto & f = tasks[0].f.get_poly_on_mesh();
-	auto & g = tasks[0].g.get_poly_on_mesh();
-
-	const uint32_t N = f.size();
-	const uint32_t N_ang = tasks[0].f.get_angles_number();
-	const double cos_ = cos(2. * M_PI / N);
-
-	if (N % N_ang != 0 || N < N_ang)
-		return -1.;
-
-	const uint32_t verts2poly_edge = N / N_ang;
-	double tmp(0.), measure(0.);
-	{
-		tmp = shift_point2(g[N-1], g[0], t, N);
-		tmp = tmp - f[0];
-		measure = measure + tmp * tmp;
-	}
-	for (uint32_t i = verts2poly_edge; i < N; i += verts2poly_edge)
-	{
-		tmp = shift_point2(g[i-1], g[i], t, N);
-		tmp = tmp - f[i];
-		measure = measure + tmp * tmp;
-	}
-	return measure;
 }

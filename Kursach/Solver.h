@@ -42,10 +42,7 @@ public:
 	void add_task(func &poly_pare);
 	void solve1();
 	void solve2();
-	bool is_refinement();
-	uint32_t edit_angle_quad(double &ret_rot_angle); // minimum of s2 functional
 	uint32_t edit_angle(double &ret_rot_angle); // minimum of s1 functional
-	double edge2edge_cut_angles_mismatching(double t);//скорее всего неправильно сичтает
 private:
 	std::vector<func> tasks;
 };
