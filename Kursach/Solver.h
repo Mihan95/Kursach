@@ -10,7 +10,7 @@ public:
 	Polygon(uint32_t NVerts, uint32_t NMesh);
 	~Polygon();
 
-	const uint32_t get_mesh_size() { return mesh_size; };
+	const uint32_t get_mesh_size() const { return mesh_size; };
 	const uint32_t get_angles_number() { return n_vertices; };
 	std::vector<double> get_poly_on_mesh() { return on_mesh; }
 	std::vector<double> get_poly_on_mesh() const { return on_mesh; }
@@ -18,7 +18,7 @@ public:
 	void project_to_mesh(uint32_t rot);
 	void shift_poly_on_mesh(double t);
 	void read_polygon_on_mesh(std::string input_name);
-	//void Polygon::shift_poly_on_mesh_op(double t); // for debug
+	void Polygon::shift_poly_on_mesh_op(double t); // for debug
 private:
 	uint32_t n_vertices;
 	uint32_t mesh_size;

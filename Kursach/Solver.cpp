@@ -2,10 +2,6 @@
 #include "Solver.h"
 #include <array>
 #include <memory>
-#include "poly34.h"
-#include "gsl_min.h"
-#include <gsl/gsl_errno.h>
-#include "gsl_multimin.h"
 #include <fstream>
 
 #define USE_FFTW
@@ -86,25 +82,22 @@ void Polygon::shift_poly_on_mesh(double t)
 	on_mesh = new_on_mesh;
 }
 
-//void Polygon::shift_poly_on_mesh_op(double t)
-//{
-//	const uint32_t N = on_mesh.size();
-//	const double cos_ = cos(2. * M_PI / N);
-//
-//	std::vector<double> tmp_on_mesh(N);
-//	std::vector<double> diff_on_mesh(N);
-//
-//	for (uint32_t i = 0; i < N-1; i++)
-//	{
-//		tmp_on_mesh[i] = shift_point2(new_on_mesh[i], new_on_mesh[i + 1], t, N);
-//		diff_on_mesh[i] = fabs(on_mesh[i] - tmp_on_mesh[i]);
-//	}
-//	{
-//		tmp_on_mesh[N-1] = shift_point2(new_on_mesh[N - 1], new_on_mesh[0], t, N);
-//		diff_on_mesh[N - 1] = fabs(on_mesh[N - 1] - tmp_on_mesh[N - 1]);
-//	}
-//	on_mesh = new_on_mesh;
-//}
+void Polygon::shift_poly_on_mesh_op(double t)
+{
+	const uint32_t N = on_mesh.size();
+	const double cos_ = cos(2. * M_PI / N);
+
+	std::vector<double> tmp_on_mesh(N);
+
+	for (uint32_t i = 0; i < N-1; i++)
+	{
+		tmp_on_mesh[i] = shift_point(on_mesh[i], on_mesh[i + 1], t, N);
+	}
+	{
+		tmp_on_mesh[N-1] = shift_point(on_mesh[N - 1], on_mesh[0], t, N);
+	}
+	on_mesh = tmp_on_mesh;
+}
 
 void Polygon::project_to_mesh(uint32_t rot)
 {
@@ -441,19 +434,42 @@ double compute_angle_functional(const gsl_vector *v, void * p)
 	double sum = 0.;
 	double tmp_sum;
 	double t = gsl_vector_get(v, 0);
+	std::vector<double> one_point_norm(N);
+	uint32_t n = N / 4;
 	for (uint32_t i = 0; i < N - 1; i++)
 	{
+		//	if (i == 0 || i == n || i == 2 * n || i == 3 * n)
+		//		continue;
 		tmp_sum = g_coo[i] * g_coo[i+1] * sin(M_2PI / N)
 			/ (g_coo[i+1] * sin(M_2PI * (1 - t) / N) + g_coo[i] * sin(M_2PI * t / N))
 			- f_coo[i];
 		sum = sum + (tmp_sum * tmp_sum);
+		one_point_norm[i] = tmp_sum * tmp_sum;
 	}
 	{
 		tmp_sum = g_coo[N - 1] * g_coo[0] * sin(M_2PI / N)
 			/ (g_coo[0] * sin(M_2PI * (1 - t) / N) + g_coo[N - 1] * sin(M_2PI * t / N))
 			- f_coo[N - 1];
 		sum = sum + (tmp_sum * tmp_sum);
+		one_point_norm[N-1] = tmp_sum * tmp_sum;
 	}
+
+	/***********************************************************/
+
+	double average_norm = sum / N;
+	std::vector<double> angle_points_norm;
+	for (uint32_t i = 0; i < N - 1; i++)
+	{
+		if (i == 0 || i == n || i == 2 * n || i == 3 * n)
+		{
+			tmp_sum = g_coo[i] * g_coo[i + 1] * sin(M_2PI / N)
+				/ (g_coo[i + 1] * sin(M_2PI * (1 - t) / N) + g_coo[i] * sin(M_2PI * t / N))
+				- f_coo[i];
+			sum = sum + (tmp_sum * tmp_sum);
+			angle_points_norm.push_back( tmp_sum * tmp_sum );
+		}
+	}
+	std::sort(one_point_norm.begin(), one_point_norm.end(), std::greater<double>());
 
 	return sum;
 }
@@ -472,8 +488,11 @@ void compute_derivative_angle_functional(const gsl_vector *v, void *p, gsl_vecto
 
 	double a(0.), b(0.), b_der(0);
 	double sum(0.), tmp_sum(0.);
+	uint32_t n = N / 4;
 	for (uint32_t i = 0; i < N - 1; i++)
 	{
+		//if (i == 0 || i == n || i == 2 * n || i == 3 * n)
+		//	continue;
 		b = g_coo[i+1] * sin(M_2PI_N * _1_t) + g_coo[i] * sin(M_2PI_N * t);
 
 		if (fabs(b) < 1.e-15)

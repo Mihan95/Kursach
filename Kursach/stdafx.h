@@ -14,7 +14,12 @@
 #include <fftw3.h>
 #include <iostream>
 #include <functional>
+#include "gsl_min.h"
+#include <gsl/gsl_errno.h>
+#include "gsl_multimin.h"
+#include <algorithm>
+#include <fstream>
 
-
+#define EPS 1.e-15
 
 // TODO: Установите здесь ссылки на дополнительные заголовки, требующиеся для программы

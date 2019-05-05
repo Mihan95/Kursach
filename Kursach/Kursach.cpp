@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "stdafx.h"
 #include "Solver.h"
+#include "angle_error.h"
 
 #define TEST_REF
 //TO DO: добавить умножение на константы и на N во все нормы
@@ -35,12 +36,12 @@ int main(int argc, char* argv[])
 	Solver slv(task);
 	double t(shift);
 	slv.edit_angle(t);
-	double s1_e = slv.edge2edge_cut_angles_mismatching(shift);
-	printf("s1_e = %.15f\n", s1_e);
+	//g.shift_poly_on_mesh_op(shift);
 	std::cout.precision(15);
 	std::cout << "\nminimum: " << std::fixed << t << std::endl;
 	std::cout << "origin_shift - finded_shift = " << std::fixed << /*2.*M_PI**/fabs(t-shift)/*/N */<< std::endl;
 
+	std::cout << "Angle norm = " << max_angle_norm(f, g) << std::endl;
 #else
 	Polygon f(4, N);
 	f.create_from_regular_poly(4);
